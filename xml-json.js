@@ -28,6 +28,7 @@ function decodeXmlEntities(text) {
 }
 
 function parseXmlToJson(xml) {
+  const MAX_DEPTH = 256;
   const source = String(xml || "").trim();
   if (!source) throw parseError("内容为空");
 
@@ -74,7 +75,9 @@ function parseXmlToJson(xml) {
     return decodeXmlEntities(cleaned.slice(start, index));
   }
 
-  function parseElement() {
+  function parseElement(depth = 0) {
+    // 深度上限：几千层嵌套的 XML 会让递归解析与后续转换爆栈，直接按解析失败处理
+    if (depth > MAX_DEPTH) throw parseError(`嵌套层级超过 ${MAX_DEPTH}`, index);
     expect("<");
     const name = readName();
     const attributes = Object.create(null);
@@ -117,7 +120,7 @@ function parseXmlToJson(xml) {
           index = end + 3;
           continue;
         }
-        children.push(parseElement());
+        children.push(parseElement(depth + 1));
       } else {
         text += readText();
       }

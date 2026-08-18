@@ -16,6 +16,9 @@
     return error;
   }
 
+  // 与桌面版 resource-policy 同口径：单图 5000 万像素上限，必须在分配像素缓冲区之前判断
+  const MAX_DECODE_PIXELS = 50 * 1000 * 1000;
+
   function isBmpBytes(bytes) {
     return bytes && bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d;
   }
@@ -44,6 +47,11 @@
       throw new Error(`BMP 尺寸不合法：${width}x${heightRaw}`);
     }
     if (compression !== 0) throw unsupported("暂不支持压缩或特殊编码的 BMP（仅支持未压缩的 24/32 位及调色板 BMP）。");
+    if (width * Math.abs(heightRaw) > MAX_DECODE_PIXELS) {
+      const error = new Error(`BMP 像素数超出上限：${width}x${Math.abs(heightRaw)}`);
+      error.code = "IMAGE_TOO_LARGE";
+      throw error;
+    }
     if (![1, 4, 8, 24, 32].includes(bitCount)) throw unsupported(`暂不支持 ${bitCount} 位 BMP。`);
 
     const height = Math.abs(heightRaw);

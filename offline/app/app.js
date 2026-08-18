@@ -46,6 +46,15 @@
     return document.getElementById(id);
   }
 
+  // Safari 在 file:// 下读 localStorage 会抛 SecurityError，连 typeof 都会触发 getter，必须包住
+  function safeStorage() {
+    try {
+      return typeof localStorage === "undefined" ? null : localStorage;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function t(key, params) {
     return i18n ? i18n.t(key, params) : key;
   }
@@ -66,8 +75,10 @@
   }
 
   function readStoredTheme() {
+    const storage = safeStorage();
+    if (!storage) return "auto";
     try {
-      const value = localStorage.getItem(THEME_STORAGE_KEY);
+      const value = storage.getItem(THEME_STORAGE_KEY);
       return THEME_ORDER.includes(value) ? value : "auto";
     } catch (error) {
       return "auto";
@@ -80,7 +91,8 @@
     elements.themeToggleLabel.textContent = t(`theme.${state.theme}`);
     elements.themeToggle.setAttribute("aria-pressed", state.theme === "dark" ? "true" : "false");
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+      const storage = safeStorage();
+      if (storage) storage.setItem(THEME_STORAGE_KEY, state.theme);
     } catch (error) {
       // 隐私模式下 localStorage 不可用时忽略即可
     }
@@ -114,8 +126,11 @@
   function statusLabel(item) {
     if (item.status === "success") {
       // 合并 PDF / 打包 ZIP 时单个文件没有独立产物，只报完成，不报 0 B
-      if (!item.result) return t("queueStatus.done");
-      return t("queueStatus.success", { size: formatBytes(item.result.size) });
+      const base = item.result
+        ? t("queueStatus.success", { size: formatBytes(item.result.size) })
+        : t("queueStatus.done");
+      const notes = warningText(item.result ? item.result.warnings : []);
+      return notes ? `${base} · ${notes}` : base;
     }
     if (item.status === "error") return item.detail || t("queueStatus.error");
     if (item.status === "converting") return t("queueStatus.converting");
@@ -376,9 +391,16 @@
     return new TextEncoder().encode(String(data));
   }
 
-  function makeResult(name, bytes, extension) {
+  function makeResult(name, bytes, extension, warnings) {
     const blob = new Blob([bytes], { type: formatMap.mimeTypeFor(extension) });
-    return { name, blob, size: blob.size };
+    return { name, blob, size: blob.size, warnings: warnings || [] };
+  }
+
+  // 警告是 { code, messages: { zhCN, enUS } }，与桌面版同结构
+  function warningText(warnings) {
+    if (!warnings || warnings.length === 0) return "";
+    const key = i18n && i18n.language === "en-US" ? "enUS" : "zhCN";
+    return warnings.map((warning) => (warning.messages ? warning.messages[key] : warning.code)).join(" ");
   }
 
   async function convertOne(item, target) {
@@ -394,16 +416,16 @@
           paper: elements.pdfPaper.value,
           margin: Number(elements.pdfMargin.value) || 0,
         });
-        return makeResult(formatMap.outputNameFor(item.name, "pdf"), pdf, "pdf");
+        return makeResult(formatMap.outputNameFor(item.name, "pdf"), pdf, "pdf", converted.warnings);
       }
-      return makeResult(formatMap.outputNameFor(item.name, target), converted.data, target);
+      return makeResult(formatMap.outputNameFor(item.name, target), converted.data, target, converted.warnings);
     }
     const source = item.extension || "txt";
     const raw = await readFileAsText(item.file);
     const options = textOptions();
     if (!options.title) options.title = formatMap.safeBaseName(item.name);
     const converted = await convertText.convertTextDocument(raw, source, target, options);
-    return makeResult(formatMap.outputNameFor(item.name, target), toBytes(converted.data), target);
+    return makeResult(formatMap.outputNameFor(item.name, target), toBytes(converted.data), target, converted.warnings);
   }
 
   async function convertQueueToZip(items) {
@@ -440,6 +462,16 @@
     return makeResult(formatMap.outputNameFor(items[0].name, "pdf"), pdf, "pdf");
   }
 
+  // 整批失败（打包 / 合并 PDF 这种一次成一个产物的路径）时，把错误落到每个文件上
+  function markBatchFailed(items, error) {
+    const detail = t("error.convert", { message: error && error.message ? error.message : String(error) });
+    for (const item of items) {
+      item.status = "error";
+      item.result = null;
+      item.detail = detail;
+    }
+  }
+
   async function convertAll() {
     if (state.converting || state.items.length === 0) return;
     if (!state.target) {
@@ -469,12 +501,16 @@
         }
         renderQueue();
         setStatus(t("status.converting", { current: 1, total: 1, name: state.items[0].name }));
-        const result = await convertQueueToZip(state.items);
-        for (const item of state.items) {
-          item.status = "success";
-          item.result = null;
+        try {
+          const result = await convertQueueToZip(state.items);
+          for (const item of state.items) {
+            item.status = "success";
+            item.result = null;
+          }
+          state.extraResults = [result];
+        } catch (error) {
+          markBatchFailed(state.items, error);
         }
-        state.extraResults = [result];
       } else if (mergePdf) {
         const images = state.items.filter((item) => item.category === "image");
         setStatus(t("status.converting", { current: 1, total: 1, name: images[0].name }));
@@ -482,13 +518,17 @@
           item.status = "converting";
         }
         renderQueue();
-        const result = await convertMergedPdf(images);
-        for (const item of images) {
-          item.status = "success";
-          item.result = null;
+        try {
+          const result = await convertMergedPdf(images);
+          for (const item of images) {
+            item.status = "success";
+            item.result = null;
+          }
+          state.extraResults = [result];
+          showToast(t("toast.merged", { count: images.length }));
+        } catch (error) {
+          markBatchFailed(images, error);
         }
-        state.extraResults = [result];
-        showToast(t("toast.merged", { count: images.length }));
       } else {
         let index = 0;
         for (const item of state.items) {
@@ -569,15 +609,39 @@
     downloadWithAnchor(name, blob);
   }
 
+  // 同名结果（不同目录的同名文件）必须改名，否则 ZIP 里会出现重复条目，解压时互相覆盖
+  function uniqueName(name, used) {
+    if (!used.has(name)) {
+      used.add(name);
+      return name;
+    }
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : "";
+    let suffix = 2;
+    let candidate = `${stem}-${suffix}${extension}`;
+    while (used.has(candidate)) {
+      suffix += 1;
+      candidate = `${stem}-${suffix}${extension}`;
+    }
+    used.add(candidate);
+    return candidate;
+  }
+
   async function downloadAll() {
     const results = state.allResults || [];
     if (results.length === 0) return;
-    const entries = [];
-    for (const result of results) {
-      entries.push({ name: result.name, data: new Uint8Array(await result.blob.arrayBuffer()) });
+    try {
+      const used = new Set();
+      const entries = [];
+      for (const result of results) {
+        entries.push({ name: uniqueName(result.name, used), data: new Uint8Array(await result.blob.arrayBuffer()) });
+      }
+      const bytes = await zipWriter.createZipCompressed(entries);
+      saveBlob("flyingmouse-offline.zip", new Blob([bytes], { type: "application/zip" }));
+    } catch (error) {
+      showToast(t("error.convert", { message: error && error.message ? error.message : String(error) }), "error");
     }
-    const bytes = await zipWriter.createZipCompressed(entries);
-    saveBlob("flyingmouse-offline.zip", new Blob([bytes], { type: "application/zip" }));
   }
 
   // 与桌面版一致：用户手动选择目标格式时按源扩展名记忆，下次同类文件默认这个目标
@@ -589,7 +653,8 @@
       state.target,
     );
     try {
-      localStorage.setItem(preferencesModule.STORAGE_KEY, JSON.stringify(state.preferences));
+      const storage = safeStorage();
+      if (storage) storage.setItem(preferencesModule.STORAGE_KEY, JSON.stringify(state.preferences));
     } catch (error) {
       // 隐私模式下存不了偏好，不影响转换
     }
@@ -606,7 +671,11 @@
 
   function removeItem(index) {
     if (state.converting) return;
-    state.items.splice(index, 1);
+    const [removed] = state.items.splice(index, 1);
+    if (removed && removed.thumbnail) {
+      URL.revokeObjectURL(removed.thumbnail);
+      state.objectUrls = state.objectUrls.filter((url) => url !== removed.thumbnail);
+    }
     renderQueue();
     renderTargets();
     renderResults();
@@ -709,12 +778,13 @@
 
   function initialize() {
     collectElements();
+    const storage = safeStorage();
     i18n = i18nModule.createI18n({
-      storage: typeof localStorage === "undefined" ? null : localStorage,
+      storage,
       systemLanguage: navigator.language,
       messages,
     });
-    if (preferencesModule) state.preferences = preferencesModule.readPreferences(localStorage);
+    if (preferencesModule) state.preferences = preferencesModule.readPreferences(storage);
     applyTheme(readStoredTheme());
     if (mouseAssets.idle) elements.brandMouse.src = mouseAssets.idle;
     setMouseState("upload");

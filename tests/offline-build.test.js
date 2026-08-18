@@ -41,6 +41,20 @@ test("鼠鼠状态图全部内联为 data URI，体积保持在 1MB 以内", () 
   assert.ok(bytes < 1024 * 1024, `离线单文件过大：${bytes} 字节`);
 });
 
+test("产物用严格 CSP：不含 'self'，源码页则允许 'self' 以便直接打开调试", () => {
+  const html = build();
+  const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html);
+  assert.ok(csp, "产物缺少 CSP");
+  assert.match(csp[1], /default-src 'none'/);
+  assert.doesNotMatch(csp[1], /'self'/);
+  assert.match(csp[1], /form-action 'none'/);
+  assert.match(csp[1], /base-uri 'none'/);
+
+  const source = fs.readFileSync(path.join(ROOT, "offline", "index.html"), "utf8");
+  const sourceCsp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(source);
+  assert.match(sourceCsp[1], /script-src 'self'/);
+});
+
 test("产物保留品牌与非商用声明", () => {
   const html = build();
   assert.match(html, /鼠鼠/);

@@ -9,7 +9,8 @@
     global.FMOffline.formatMap = api;
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const EXTENSION_ALIASES = { jpeg: "jpg", markdown: "md", htm: "html", tif: "tiff" };
+  // 全部用 null 原型：文件名叫 a.constructor / a.__proto__ 时不能命中 Object.prototype 上的成员
+  const EXTENSION_ALIASES = Object.assign(Object.create(null), { jpeg: "jpg", markdown: "md", htm: "html", tif: "tiff" });
 
   function normalizeExtension(value) {
     const raw = String(value == null ? "" : value).trim().toLowerCase().replace(/^\./, "");
@@ -29,7 +30,7 @@
   const JSON_TARGETS = ["json", "csv", "md", "txt", "zip"];
   const XML_TARGETS = ["json", "txt", "zip"];
 
-  const CATEGORIES = {
+  const CATEGORIES = Object.assign(Object.create(null), {
     png: "image",
     jpg: "image",
     webp: "image",
@@ -46,7 +47,7 @@
     tsv: "table",
     json: "data",
     xml: "data",
-  };
+  });
 
   const TARGETS = {
     image: IMAGE_TARGETS,
@@ -82,7 +83,8 @@
       .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
       .replace(/[/?<>\\:*|"]/g, "")
       .replace(/[. ]+$/, "");
-    return RESERVED_NAMES.test(cleaned) ? "" : cleaned;
+    // con.txt / AUX.TXT 在 Windows 上同样是设备名，要按主干判断
+    return RESERVED_NAMES.test(cleaned.split(".")[0]) ? "" : cleaned;
   }
 
   function safeBaseName(originalName) {
@@ -100,7 +102,7 @@
     return `${safeBaseName(originalName)}.${suffix}`;
   }
 
-  const MIME_TYPES = {
+  const MIME_TYPES = Object.assign(Object.create(null), {
     png: "image/png",
     jpg: "image/jpeg",
     webp: "image/webp",
@@ -119,7 +121,7 @@
     epub: "application/epub+zip",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     zip: "application/zip",
-  };
+  });
 
   function mimeTypeFor(extension) {
     return MIME_TYPES[normalizeExtension(extension)] || "application/octet-stream";

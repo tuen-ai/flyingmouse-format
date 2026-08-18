@@ -11,11 +11,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const encoder = new TextEncoder();
 
-  const PAPER_SIZES = {
+  const PAPER_SIZES = Object.assign(Object.create(null), {
     auto: null,
     a4: { width: 595.28, height: 841.89 },
     letter: { width: 612, height: 792 },
-  };
+  });
 
   function latin1Bytes(text) {
     const out = new Uint8Array(text.length);
@@ -100,7 +100,7 @@
   function createImagePdf(images, options = {}) {
     if (!Array.isArray(images) || images.length === 0) throw new Error('at least one image is required');
     const paperKey = String(options.paper || 'auto').toLowerCase();
-    if (!(paperKey in PAPER_SIZES)) throw new Error(`unknown paper size: ${options.paper}`);
+    if (!Object.prototype.hasOwnProperty.call(PAPER_SIZES, paperKey)) throw new Error(`unknown paper size: ${options.paper}`);
     const paper = PAPER_SIZES[paperKey];
     const margin = Number.isFinite(options.margin) ? options.margin : 24;
 

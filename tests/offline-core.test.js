@@ -322,3 +322,110 @@ test("能力表：目标取交集、扩展名归一化、输出名保留中文",
   assert.equal(formatMap.outputNameFor("doc.pdf", "png", "zip"), "doc.png.zip");
   assert.equal(formatMap.mimeTypeFor("epub"), "application/epub+zip");
 });
+
+test("空行与显式空字段行的区别：单列 CSV 不能丢行", () => {
+  assert.deepEqual(textFormats.parseCsvRecords('a\n""\nb'), [["a"], [""], ["b"]]);
+  assert.deepEqual(textFormats.parseCsvRecords('a\n""'), [["a"], [""]]);
+  assert.deepEqual(textFormats.parseCsvRecords("\n\n"), []);
+});
+
+test("GFM 表格：csv -> md -> html 可以往返", () => {
+  const markdown = textFormats.csvToMarkdown('"name","note"\n"Mouse","a\nb"\n');
+  const html = textFormats.markdownBlocksToHtml(markdown);
+  assert.match(html, /<table>/);
+  assert.match(html, /<th>name<\/th><th>note<\/th>/);
+  assert.match(html, /<td>Mouse<\/td><td>a<br>b<\/td>/);
+  assert.match(textFormats.markdownBlocksToHtml("| a |\n| --- |\n| x\\|y |"), /<td>x\|y<\/td>/);
+});
+
+test("HTML -> Markdown 也走链接/图片白名单", () => {
+  const markdown = textFormats.htmlToMarkdown(
+    '<a href="javascript:alert(1)">click</a> <a href="//evil.example/x">rel</a> '
+      + '<a href="https://ok.example">ok</a> <img src="javascript:x" alt="a"> <img src="./b.png" alt="b">',
+  );
+  assert.doesNotMatch(markdown, /javascript:/);
+  assert.doesNotMatch(markdown, /evil\.example/);
+  assert.match(markdown, /\[ok\]\(https:\/\/ok\.example\)/);
+  assert.match(markdown, /!\[b\]\(\.\/b\.png\)/);
+  assert.equal(textFormats.isSafeMarkdownLink("//evil.example"), false);
+  assert.equal(textFormats.isSafeMarkdownLink("java\u0001script:alert(1)"), false);
+});
+
+test("强调解析不吃掉 snake_case 与乘号，反斜杠转义有效", () => {
+  assert.equal(textFormats.markdownBlocksToHtml("snake_case_name and 2 * 3 * 4"), "<p>snake_case_name and 2 * 3 * 4</p>");
+  assert.equal(textFormats.markdownBlocksToHtml("a \\* b"), "<p>a * b</p>");
+  assert.equal(textFormats.markdownBlocksToHtml("**b** and *i*"), "<p><strong>b</strong> and <em>i</em></p>");
+});
+
+test("满屏方括号不会退化成 O(n^2)", () => {
+  const started = Date.now();
+  textFormats.markdownToHtml("[".repeat(60000));
+  textFormats.markdownToHtml("![".repeat(60000));
+  assert.ok(Date.now() - started < 3000, `链接解析太慢：${Date.now() - started}ms`);
+});
+
+test("隐式闭合的 li / td 不会互相嵌套", () => {
+  assert.equal(textFormats.htmlToMarkdown("<ul><li><p>a<li>b</ul>"), "* a\n* b");
+  assert.equal(textFormats.htmlToMarkdown("<table><tr><td>a<td>b<tr><td>c<td>d</table>"), "| a | b |\n| --- | --- |\n| c | d |");
+});
+
+test("嵌套过深的输入按错误处理，不爆栈", () => {
+  const deepHtml = "<div>".repeat(20000) + "x" + "</div>".repeat(20000);
+  assert.match(textFormats.htmlToMarkdown(deepHtml), /^x$/);
+  const deepJson = `[${"{\"a\":".repeat(400)}1${"}".repeat(400)}]`;
+  assert.throws(() => textFormats.jsonToCsv(deepJson), (error) => error.code === "JSON_TOO_DEEP");
+});
+
+test("CSV 分隔符对读和写都生效", async () => {
+  const semicolon = "a;b\n1;2";
+  const toJson = await convertTextDocument(semicolon, "csv", "json", { delimiter: ";" });
+  assert.deepEqual(JSON.parse(toJson.data), [{ a: "1", b: "2" }]);
+  const toMarkdown = await convertTextDocument(semicolon, "csv", "md", { delimiter: ";" });
+  assert.equal(toMarkdown.data, "| a | b |\n| --- | --- |\n| 1 | 2 |");
+  const toCsv = await convertTextDocument(semicolon, "csv", "csv", { delimiter: ";" });
+  assert.equal(toCsv.data, '"a";"b"\n"1";"2"');
+  const toTsv = await convertTextDocument(semicolon, "csv", "tsv", { delimiter: ";" });
+  assert.equal(toTsv.data, '"a"\t"b"\n"1"\t"2"');
+});
+
+test("md 表格进入 DOCX 与 EPUB 时仍是表格", async () => {
+  const blocks = office.textToBlocks("# T\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n", "md");
+  assert.deepEqual(blocks[1], { type: "table", rows: [["a", "b"], ["1", "2"]] });
+  assert.match(office.blocksToDocumentXml(blocks), /<\/w:tbl><w:p\/>/);
+  assert.match(ebook.markdownToXhtml("| a |\n| --- |\n| 1 |"), /<table border="1">/);
+  const docx = await convertTextDocument("| a | b |\n| --- | --- |\n| 1 | 2 |", "md", "docx", {});
+  assert.ok(docx.data.length > 0);
+});
+
+test("DOCX 等宽块的字体写在 run 上而不是段落标记上", () => {
+  const xml = office.blocksToDocumentXml([{ type: "code", text: "const a = 1;" }]);
+  assert.match(xml, /<w:r><w:rPr><w:rFonts w:ascii="Consolas"/);
+});
+
+test("BMP 解码在分配缓冲区前先卡像素总量", () => {
+  const header = Buffer.alloc(200);
+  header[0] = 0x42;
+  header[1] = 0x4d;
+  header.writeUInt32LE(54, 10);
+  header.writeUInt32LE(40, 14);
+  header.writeInt32LE(65535, 18);
+  header.writeInt32LE(8192, 22);
+  header.writeUInt16LE(1, 28);
+  header.writeUInt32LE(0, 30);
+  assert.throws(() => imageCodecs.decodeBmp(new Uint8Array(header)), (error) => error.code === "IMAGE_TOO_LARGE");
+});
+
+test("ZIP 条目名兜底：不允许 ../、绝对路径、反斜杠", () => {
+  assert.equal(zipWriter.safeEntryName("../../evil.sh"), "evil.sh");
+  assert.equal(zipWriter.safeEntryName("/etc/passwd"), "etc/passwd");
+  assert.equal(zipWriter.safeEntryName("a\\b.txt"), "a/b.txt");
+  assert.equal(zipWriter.safeEntryName(".."), "file");
+});
+
+test("Windows 设备名带扩展名也要拦下，查表不走原型链", () => {
+  assert.equal(formatMap.sanitizeFileName("con.txt"), "");
+  assert.equal(formatMap.safeBaseName("AUX.TXT"), "converted");
+  assert.equal(formatMap.categoryOf("constructor"), "unknown");
+  assert.equal(formatMap.mimeTypeFor("constructor"), "application/octet-stream");
+  assert.equal(formatMap.extensionOf("a.constructor"), "constructor");
+});

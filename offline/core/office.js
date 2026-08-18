@@ -14,6 +14,11 @@
     return globalThis.FMOffline.zipWriter;
   }
 
+  function textFormats() {
+    if (nodeRequire) return nodeRequire("./text-formats.js");
+    return globalThis.FMOffline.textFormats;
+  }
+
   function escapeXml(text) {
     return String(text == null ? "" : text)
       .split("&")
@@ -58,20 +63,25 @@
     + [44, 36, 30, 26, 24, 22].map((size, index) => headingStyle(index + 1, size)).join("")
     + "</w:styles>";
 
-  function runs(text) {
+  // rPr 必须写在每个 <w:r> 里：只放在 <w:pPr> 中只会影响段落标记，正文仍是默认字体
+  function runs(text, runProperties) {
     const lines = String(text == null ? "" : text).split("\n");
+    const rPr = runProperties || "";
     return lines
-      .map((line, index) => (index === 0 ? "" : "<w:r><w:br/></w:r>") + `<w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`)
+      .map((line, index) => (index === 0 ? "" : `<w:r>${rPr}<w:br/></w:r>`)
+        + `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`)
       .join("");
   }
+
+  const MONO_RPR = '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr>';
 
   function paragraph(text, options = {}) {
     const properties = [];
     if (options.style) properties.push(`<w:pStyle w:val="${options.style}"/>`);
     if (options.indent) properties.push(`<w:ind w:left="${options.indent}"/>`);
-    if (options.mono) properties.push('<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr>');
+    if (options.mono) properties.push(MONO_RPR);
     const pPr = properties.length > 0 ? `<w:pPr>${properties.join("")}</w:pPr>` : "";
-    return `<w:p>${pPr}${runs(text)}</w:p>`;
+    return `<w:p>${pPr}${runs(text, options.mono ? MONO_RPR : "")}</w:p>`;
   }
 
   function tableXml(rows) {
@@ -101,7 +111,8 @@
         if (block.type === "bullet") return paragraph(`• ${block.text}`, { indent: 360 });
         if (block.type === "ordered") return paragraph(`${block.index || 1}. ${block.text}`, { indent: 360 });
         if (block.type === "code") return paragraph(block.text, { mono: true, indent: 240 });
-        if (block.type === "table") return tableXml(block.rows || []);
+        // 表格后必须再跟一个空段落：Word 自己的写法如此，紧跟 sectPr 的表格在部分版本里会报错
+        if (block.type === "table") return `${tableXml(block.rows || [])}<w:p/>`;
         return paragraph(block.text);
       })
       .join("");
@@ -122,10 +133,25 @@
         .map((chunk) => ({ type: "paragraph", text: chunk }));
     }
     const blocks = [];
+    const formats = textFormats();
+    const lines = text.split("\n");
     let codeLines = null;
     let orderedIndex = 0;
-    for (const line of text.split("\n")) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
       const trimmed = line.trim();
+      // GFM 表格转成真正的 DOCX 表格，而不是一行竖线文本
+      if (!codeLines && formats && formats.isTableRow(line) && formats.isTableDelimiterRow(lines[lineIndex + 1])) {
+        const rows = [formats.splitTableRow(line)];
+        let cursor = lineIndex + 2;
+        while (cursor < lines.length && formats.isTableRow(lines[cursor])) {
+          rows.push(formats.splitTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        blocks.push({ type: "table", rows });
+        lineIndex = cursor - 1;
+        continue;
+      }
       if (/^```/.test(trimmed)) {
         if (codeLines) {
           blocks.push({ type: "code", text: codeLines.join("\n") });

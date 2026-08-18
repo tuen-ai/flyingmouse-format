@@ -40,11 +40,14 @@
       field = "";
       fieldStarted = false;
     };
+    let rowHasContent = false;
     const endRow = () => {
       endField();
-      const isBlank = row.length === 1 && row[0] === "";
-      if (!isBlank) records.push(row);
+      // 只丢真正的空行；显式写出的 "" 是一行合法数据
+      const isBlankLine = row.length === 1 && row[0] === "" && !rowHasContent;
+      if (!isBlankLine) records.push(row);
       row = [];
+      rowHasContent = false;
     };
 
     while (index < text.length) {
@@ -68,11 +71,13 @@
         if (fieldStarted && field.length > 0) throw csvError("引号必须出现在字段开头。");
         inQuotes = true;
         fieldStarted = true;
+        rowHasContent = true;
         index += 1;
         continue;
       }
       if (char === delimiter) {
         endField();
+        rowHasContent = true;
         index += 1;
         continue;
       }
@@ -88,11 +93,12 @@
       }
       field += char;
       fieldStarted = true;
+      rowHasContent = true;
       index += 1;
     }
 
     if (inQuotes) throw csvError("引号未闭合。");
-    if (field.length > 0 || row.length > 0) endRow();
+    if (field.length > 0 || row.length > 0 || rowHasContent) endRow();
 
     if (records.length > 0) {
       const width = records[0].length;
@@ -201,7 +207,14 @@
   }
 
   // target 用 null 原型：源 JSON 里的 "__proto__" 字段用普通对象会触发原型 setter，整列被悄悄丢掉
-  function flattenRow(row, prefix, target) {
+  const MAX_JSON_DEPTH = 256;
+
+  function flattenRow(row, prefix, target, depth = 0) {
+    if (depth > MAX_JSON_DEPTH) {
+      const error = new Error(`JSON 转 CSV 失败：嵌套层级超过 ${MAX_JSON_DEPTH}。`);
+      error.code = "JSON_TOO_DEEP";
+      throw error;
+    }
     const keys = Object.keys(row).sort();
     for (const key of keys) {
       const path = prefix ? `${prefix}.${key}` : key;
@@ -213,7 +226,7 @@
           error.path = path;
           throw error;
         }
-        flattenRow(value, path, target);
+        flattenRow(value, path, target, depth + 1);
         continue;
       }
       if (Object.prototype.hasOwnProperty.call(target, path)) {
@@ -270,9 +283,12 @@
   const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
   const RAW_TEXT_TAGS = new Set(["script", "style"]);
   const BLOCK_TAGS = new Set(["p", "div", "section", "article", "header", "footer", "main", "aside", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "hr"]);
-  const NAMED_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  // null 原型：否则 "&constructor;" 之类的实体会命中 Object.prototype 上的成员
+  const NAMED_ENTITIES = Object.assign(Object.create(null), { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " });
   // 嵌套深度上限：畸形/恶意 HTML（几万层嵌套）会让后续递归序列化爆栈，超过这个深度就压平
   const MAX_HTML_DEPTH = 256;
+  // 这些标签可以被后面的同级标签隐式关掉（HTML 解析器的 optional end tag 子集）
+  const IMPLICIT_CLOSABLE = new Set(["p", "li", "td", "th", "tr", "span", "em", "strong", "b", "i", "code", "a"]);
 
   function decodeHtmlEntities(text) {
     return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, body) => {
@@ -354,17 +370,22 @@
       }
       const tag = openMatch[1].toLowerCase();
       const node = { type: "element", tag, attributes: parseAttributes(openMatch[2]), children: [] };
-      // 隐式闭合：<li> 遇 <li>、<p> 遇块级元素、<td>/<th>/<tr> 同级
-      const current = top();
-      if (current.type === "element") {
-        if (tag === "li" && current.tag === "li") stack.pop();
-        else if ((tag === "td" || tag === "th") && (current.tag === "td" || current.tag === "th")) stack.pop();
-        else if (tag === "tr" && (current.tag === "td" || current.tag === "th")) {
-          stack.pop();
-          if (top().type === "element" && top().tag === "tr") stack.pop();
-        } else if (tag === "tr" && current.tag === "tr") stack.pop();
-        else if (current.tag === "p" && BLOCK_TAGS.has(tag)) stack.pop();
-      }
+      // 隐式闭合：<li> 遇 <li>、<td>/<th>/<tr> 同级、<p> 遇块级元素。
+      // 必须沿栈往下找（真实 HTML 里常见 <li><p>a<li>b，只看直接父节点会把第二个 li 塞进第一个里）。
+      const closeImplicit = (targets) => {
+        for (let i = stack.length - 1; i > 0; i -= 1) {
+          const node = stack[i];
+          if (targets.includes(node.tag)) {
+            stack.length = i;
+            return;
+          }
+          if (!IMPLICIT_CLOSABLE.has(node.tag)) return;
+        }
+      };
+      if (tag === "li") closeImplicit(["li"]);
+      else if (tag === "td" || tag === "th") closeImplicit(["td", "th"]);
+      else if (tag === "tr") closeImplicit(["tr"]);
+      else if (BLOCK_TAGS.has(tag) && top().type === "element" && top().tag === "p") stack.pop();
       top().children.push(node);
       index = next + openMatch[0].length;
 
@@ -469,11 +490,11 @@
       else if (tag === "code") out += `\`${inner.trim()}\``;
       else if (tag === "a") {
         const href = node.attributes.href || "";
-        out += href ? `[${inner.trim()}](${href})` : inner;
+        out += isSafeMarkdownLink(href) ? `[${inner.trim()}](${href})` : inner;
       } else if (tag === "img") {
         const src = node.attributes.src || "";
         const alt = node.attributes.alt || "";
-        out += src ? `![${alt}](${src})` : alt;
+        out += isSafeMarkdownImage(src) ? `![${alt}](${src})` : alt;
       } else if (tag === "p" || BLOCK_TAGS.has(tag)) out += `\n${blockMarkdown([node])}\n`;
       else out += inner;
     }
@@ -583,6 +604,9 @@
   function isSafeMarkdownLink(href) {
     const value = String(href || "").trim();
     if (!value) return false;
+    // 控制字符会被浏览器忽略，可用来伪装 javascript:；// 开头是协议相对地址（Windows 上还会变成 UNC 路径）
+    if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+    if (value.startsWith("//")) return false;
     if (/^(?:https?:|mailto:)/i.test(value)) return true;
     return /^(?:#|\/|\.\/|\.\.\/)/.test(value);
   }
@@ -596,12 +620,40 @@
     return !/^[a-z][a-z\d+.-]*:/i.test(value);
   }
 
+  const MARKDOWN_ESCAPABLE = "\\`*_{}[]()#+-.!>|~";
+
+  // 找强调的收尾定界符：闭合符前面不能是空白（CommonMark 的 right-flanking 近似）
+  function findEmphasisEnd(source, start, marker) {
+    let index = source.indexOf(marker, start);
+    while (index > start) {
+      const previous = source[index - 1];
+      if (previous && !/\s/.test(previous) && previous !== "\\") return index;
+      index = source.indexOf(marker, index + marker.length);
+    }
+    return -1;
+  }
+
+  // 只有附近确实存在 "](" 时才跑链接正则：满屏 "[" 的输入否则会退化成 O(n^2)
+  function hasLinkTail(source, index) {
+    const close = source.indexOf("](", index + 1);
+    return close !== -1 && close - index <= 1024;
+  }
+
+  function isWordCharacter(char) {
+    return Boolean(char) && /[0-9A-Za-z\u4e00-\u9fff]/.test(char);
+  }
+
   function inlineHtml(text) {
     let out = "";
     let index = 0;
     const source = String(text);
     while (index < source.length) {
       const char = source[index];
+      if (char === "\\" && MARKDOWN_ESCAPABLE.includes(source[index + 1] || "")) {
+        out += escapeHtmlText(source[index + 1]);
+        index += 2;
+        continue;
+      }
       if (char === "`") {
         const end = source.indexOf("`", index + 1);
         if (end > index) {
@@ -610,8 +662,8 @@
           continue;
         }
       }
-      if (char === "!" && source[index + 1] === "[") {
-        const match = /^!\[([^\]]*)\]\(((?:[^()\s]|\([^()]*\))*)(?:\s+"([^"]*)")?\)/.exec(source.slice(index));
+      if (char === "!" && source[index + 1] === "[" && hasLinkTail(source, index)) {
+        const match = /^!\[([^\]]{0,1024})\]\(((?:[^()\s]|\([^()]*\)){0,2048})(?:\s+"([^"]{0,256})")?\)/.exec(source.slice(index));
         if (match) {
           const [full, alt, src, title] = match;
           if (isSafeMarkdownImage(src)) {
@@ -624,8 +676,8 @@
           continue;
         }
       }
-      if (char === "[") {
-        const match = /^\[([^\]]*)\]\(((?:[^()\s]|\([^()]*\))*)(?:\s+"([^"]*)")?\)/.exec(source.slice(index));
+      if (char === "[" && hasLinkTail(source, index)) {
+        const match = /^\[([^\]]{0,1024})\]\(((?:[^()\s]|\([^()]*\)){0,2048})(?:\s+"([^"]{0,256})")?\)/.exec(source.slice(index));
         if (match) {
           const [full, label, href, title] = match;
           if (isSafeMarkdownLink(href)) {
@@ -638,8 +690,8 @@
           continue;
         }
       }
-      if (source.startsWith("**", index)) {
-        const end = source.indexOf("**", index + 2);
+      if (source.startsWith("**", index) && !/\s/.test(source[index + 2] || " ")) {
+        const end = findEmphasisEnd(source, index + 2, "**");
         if (end > index + 1) {
           out += `<strong>${inlineHtml(source.slice(index + 2, end))}</strong>`;
           index = end + 2;
@@ -647,17 +699,68 @@
         }
       }
       if (char === "*" || char === "_") {
-        const end = source.indexOf(char, index + 1);
-        if (end > index + 1) {
-          out += `<em>${inlineHtml(source.slice(index + 1, end))}</em>`;
-          index = end + 1;
-          continue;
+        // 下划线不参与词内强调（snake_case_name 必须原样保留）；星号也要求定界符紧挨非空白
+        const intraWord = char === "_" && (isWordCharacter(source[index - 1]) || false);
+        if (!intraWord && !/\s/.test(source[index + 1] || " ")) {
+          const end = findEmphasisEnd(source, index + 1, char);
+          if (end > index + 1 && !(char === "_" && isWordCharacter(source[end + 1]))) {
+            out += `<em>${inlineHtml(source.slice(index + 1, end))}</em>`;
+            index = end + 1;
+            continue;
+          }
         }
       }
       out += escapeHtmlText(char);
       index += 1;
     }
     return out;
+  }
+
+  // ---------- GFM 表格 ----------
+
+  function splitTableRow(line) {
+    const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    const cells = [];
+    let current = "";
+    for (let i = 0; i < trimmed.length; i += 1) {
+      const char = trimmed[i];
+      if (char === "\\" && (trimmed[i + 1] === "|" || trimmed[i + 1] === "\\")) {
+        current += trimmed[i + 1];
+        i += 1;
+        continue;
+      }
+      if (char === "|") {
+        cells.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    cells.push(current.trim());
+    return cells;
+  }
+
+  function isTableDelimiterRow(line) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed.includes("-") || !trimmed.includes("|")) return false;
+    return /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?$/.test(trimmed);
+  }
+
+  function isTableRow(line) {
+    return String(line || "").trim().startsWith("|");
+  }
+
+  function tableRowsToHtml(rows) {
+    const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const cell = (value, tag) => `<${tag}>${inlineHtml(String(value == null ? "" : value).split("<br>").join("\n"))
+      .split("\n")
+      .join("<br>")}</${tag}>`;
+    const head = `<thead><tr>${rows[0].concat(new Array(Math.max(0, width - rows[0].length)).fill("")).map((value) => cell(value, "th")).join("")}</tr></thead>`;
+    const body = rows
+      .slice(1)
+      .map((row) => `<tr>${row.concat(new Array(Math.max(0, width - row.length)).fill("")).map((value) => cell(value, "td")).join("")}</tr>`)
+      .join("\n");
+    return `<table>\n${head}\n<tbody>\n${body}\n</tbody>\n</table>`;
   }
 
   function markdownBlocksToHtml(markdown) {
@@ -693,7 +796,21 @@
       flushQuote();
     };
 
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
+      // GFM 表格：当前行以 | 开头且下一行是分隔行
+      if (!codeLines && isTableRow(line) && isTableDelimiterRow(lines[lineIndex + 1])) {
+        flushAll();
+        const rows = [splitTableRow(line)];
+        let cursor = lineIndex + 2;
+        while (cursor < lines.length && isTableRow(lines[cursor])) {
+          rows.push(splitTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        html.push(tableRowsToHtml(rows));
+        lineIndex = cursor - 1;
+        continue;
+      }
       const fence = /^```(.*)$/.exec(line.trim());
       if (codeLines) {
         if (fence) {
@@ -805,6 +922,9 @@
     htmlToText,
     markdownToHtml,
     markdownBlocksToHtml,
+    splitTableRow,
+    isTableDelimiterRow,
+    isTableRow,
     textToHtml,
     textToCsvLines,
     jsonPretty,

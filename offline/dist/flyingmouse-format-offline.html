@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- 离线单文件：禁止任何外部连接（构建产物内联全部样式、脚本与图片） -->
+    <!-- 源码页允许 'self'（直接打开 offline/index.html 调试用）；构建时会换成不含 'self' 的严格策略 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; media-src blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src blob:; form-action 'none'; base-uri 'none'">
     <title>FlyingMouse Format Offline · 飞鼠格式离线版</title>
     <style>
@@ -1065,7 +1065,7 @@ li:focus-visible {
 
             <div class="field-block" id="textOptions" hidden>
               <label class="field">
-                <span class="field-label" data-i18n="option.delimiter">CSV 分隔符</span>
+                <span class="field-label" data-i18n="option.delimiter">CSV 分隔符（读取和写出都用它）</span>
                 <select id="csvDelimiter">
                   <option value="," data-i18n="option.delimiterComma">逗号 ,</option>
                   <option value=";" data-i18n="option.delimiterSemicolon">分号 ;</option>
@@ -1258,6 +1258,7 @@ function decodeXmlEntities(text) {
 }
 
 function parseXmlToJson(xml) {
+  const MAX_DEPTH = 256;
   const source = String(xml || "").trim();
   if (!source) throw parseError("内容为空");
 
@@ -1304,7 +1305,9 @@ function parseXmlToJson(xml) {
     return decodeXmlEntities(cleaned.slice(start, index));
   }
 
-  function parseElement() {
+  function parseElement(depth = 0) {
+    // 深度上限：几千层嵌套的 XML 会让递归解析与后续转换爆栈，直接按解析失败处理
+    if (depth > MAX_DEPTH) throw parseError(`嵌套层级超过 ${MAX_DEPTH}`, index);
     expect("<");
     const name = readName();
     const attributes = Object.create(null);
@@ -1347,7 +1350,7 @@ function parseXmlToJson(xml) {
           index = end + 3;
           continue;
         }
-        children.push(parseElement());
+        children.push(parseElement(depth + 1));
       } else {
         text += readText();
       }
@@ -1469,12 +1472,24 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
    * entries: [{ name, data, deflated?: Uint8Array }]
    * 有 deflated 时用方法 8（调用方已压缩），否则 store。
    */
+  // 条目名兜底：即使上层忘了 sanitize，也不允许 ../、绝对路径、反斜杠和控制字符进包
+  function safeEntryName(name) {
+    const cleaned = String(name == null ? "" : name)
+      .replace(/\\/g, "/")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .split("/")
+      .filter((part) => part && part !== "." && part !== "..")
+      .join("/");
+    return cleaned || "file";
+  }
+
   function createZip(entries) {
+    if (entries.length > 65535) throw new Error("ZIP 条目数超过 65535，请分批打包。");
     const chunks = [];
     const central = [];
     let offset = 0;
     for (const entry of entries) {
-      const nameBytes = encoder.encode(entry.name);
+      const nameBytes = encoder.encode(safeEntryName(entry.name));
       const raw = toBytes(entry.data);
       const useDeflate = entry.deflated instanceof Uint8Array && entry.deflated.length < raw.length;
       const stored = useDeflate ? entry.deflated : raw;
@@ -1558,7 +1573,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return createZip(prepared);
   }
 
-  return { createZip, createZipCompressed, crc32, toBytes, concat };
+  return { createZip, createZipCompressed, crc32, toBytes, concat, safeEntryName };
 });
 
     </script>
@@ -1576,11 +1591,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const encoder = new TextEncoder();
 
-  const PAPER_SIZES = {
+  const PAPER_SIZES = Object.assign(Object.create(null), {
     auto: null,
     a4: { width: 595.28, height: 841.89 },
     letter: { width: 612, height: 792 },
-  };
+  });
 
   function latin1Bytes(text) {
     const out = new Uint8Array(text.length);
@@ -1665,7 +1680,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   function createImagePdf(images, options = {}) {
     if (!Array.isArray(images) || images.length === 0) throw new Error('at least one image is required');
     const paperKey = String(options.paper || 'auto').toLowerCase();
-    if (!(paperKey in PAPER_SIZES)) throw new Error(`unknown paper size: ${options.paper}`);
+    if (!Object.prototype.hasOwnProperty.call(PAPER_SIZES, paperKey)) throw new Error(`unknown paper size: ${options.paper}`);
     const paper = PAPER_SIZES[paperKey];
     const margin = Number.isFinite(options.margin) ? options.margin : 24;
 
@@ -1788,11 +1803,14 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       field = "";
       fieldStarted = false;
     };
+    let rowHasContent = false;
     const endRow = () => {
       endField();
-      const isBlank = row.length === 1 && row[0] === "";
-      if (!isBlank) records.push(row);
+      // 只丢真正的空行；显式写出的 "" 是一行合法数据
+      const isBlankLine = row.length === 1 && row[0] === "" && !rowHasContent;
+      if (!isBlankLine) records.push(row);
       row = [];
+      rowHasContent = false;
     };
 
     while (index < text.length) {
@@ -1816,11 +1834,13 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         if (fieldStarted && field.length > 0) throw csvError("引号必须出现在字段开头。");
         inQuotes = true;
         fieldStarted = true;
+        rowHasContent = true;
         index += 1;
         continue;
       }
       if (char === delimiter) {
         endField();
+        rowHasContent = true;
         index += 1;
         continue;
       }
@@ -1836,11 +1856,12 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       }
       field += char;
       fieldStarted = true;
+      rowHasContent = true;
       index += 1;
     }
 
     if (inQuotes) throw csvError("引号未闭合。");
-    if (field.length > 0 || row.length > 0) endRow();
+    if (field.length > 0 || row.length > 0 || rowHasContent) endRow();
 
     if (records.length > 0) {
       const width = records[0].length;
@@ -1949,7 +1970,14 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   }
 
   // target 用 null 原型：源 JSON 里的 "__proto__" 字段用普通对象会触发原型 setter，整列被悄悄丢掉
-  function flattenRow(row, prefix, target) {
+  const MAX_JSON_DEPTH = 256;
+
+  function flattenRow(row, prefix, target, depth = 0) {
+    if (depth > MAX_JSON_DEPTH) {
+      const error = new Error(`JSON 转 CSV 失败：嵌套层级超过 ${MAX_JSON_DEPTH}。`);
+      error.code = "JSON_TOO_DEEP";
+      throw error;
+    }
     const keys = Object.keys(row).sort();
     for (const key of keys) {
       const path = prefix ? `${prefix}.${key}` : key;
@@ -1961,7 +1989,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
           error.path = path;
           throw error;
         }
-        flattenRow(value, path, target);
+        flattenRow(value, path, target, depth + 1);
         continue;
       }
       if (Object.prototype.hasOwnProperty.call(target, path)) {
@@ -2018,9 +2046,12 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
   const RAW_TEXT_TAGS = new Set(["script", "style"]);
   const BLOCK_TAGS = new Set(["p", "div", "section", "article", "header", "footer", "main", "aside", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "hr"]);
-  const NAMED_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  // null 原型：否则 "&constructor;" 之类的实体会命中 Object.prototype 上的成员
+  const NAMED_ENTITIES = Object.assign(Object.create(null), { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " });
   // 嵌套深度上限：畸形/恶意 HTML（几万层嵌套）会让后续递归序列化爆栈，超过这个深度就压平
   const MAX_HTML_DEPTH = 256;
+  // 这些标签可以被后面的同级标签隐式关掉（HTML 解析器的 optional end tag 子集）
+  const IMPLICIT_CLOSABLE = new Set(["p", "li", "td", "th", "tr", "span", "em", "strong", "b", "i", "code", "a"]);
 
   function decodeHtmlEntities(text) {
     return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, body) => {
@@ -2102,17 +2133,22 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       }
       const tag = openMatch[1].toLowerCase();
       const node = { type: "element", tag, attributes: parseAttributes(openMatch[2]), children: [] };
-      // 隐式闭合：<li> 遇 <li>、<p> 遇块级元素、<td>/<th>/<tr> 同级
-      const current = top();
-      if (current.type === "element") {
-        if (tag === "li" && current.tag === "li") stack.pop();
-        else if ((tag === "td" || tag === "th") && (current.tag === "td" || current.tag === "th")) stack.pop();
-        else if (tag === "tr" && (current.tag === "td" || current.tag === "th")) {
-          stack.pop();
-          if (top().type === "element" && top().tag === "tr") stack.pop();
-        } else if (tag === "tr" && current.tag === "tr") stack.pop();
-        else if (current.tag === "p" && BLOCK_TAGS.has(tag)) stack.pop();
-      }
+      // 隐式闭合：<li> 遇 <li>、<td>/<th>/<tr> 同级、<p> 遇块级元素。
+      // 必须沿栈往下找（真实 HTML 里常见 <li><p>a<li>b，只看直接父节点会把第二个 li 塞进第一个里）。
+      const closeImplicit = (targets) => {
+        for (let i = stack.length - 1; i > 0; i -= 1) {
+          const node = stack[i];
+          if (targets.includes(node.tag)) {
+            stack.length = i;
+            return;
+          }
+          if (!IMPLICIT_CLOSABLE.has(node.tag)) return;
+        }
+      };
+      if (tag === "li") closeImplicit(["li"]);
+      else if (tag === "td" || tag === "th") closeImplicit(["td", "th"]);
+      else if (tag === "tr") closeImplicit(["tr"]);
+      else if (BLOCK_TAGS.has(tag) && top().type === "element" && top().tag === "p") stack.pop();
       top().children.push(node);
       index = next + openMatch[0].length;
 
@@ -2217,11 +2253,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       else if (tag === "code") out += `\`${inner.trim()}\``;
       else if (tag === "a") {
         const href = node.attributes.href || "";
-        out += href ? `[${inner.trim()}](${href})` : inner;
+        out += isSafeMarkdownLink(href) ? `[${inner.trim()}](${href})` : inner;
       } else if (tag === "img") {
         const src = node.attributes.src || "";
         const alt = node.attributes.alt || "";
-        out += src ? `![${alt}](${src})` : alt;
+        out += isSafeMarkdownImage(src) ? `![${alt}](${src})` : alt;
       } else if (tag === "p" || BLOCK_TAGS.has(tag)) out += `\n${blockMarkdown([node])}\n`;
       else out += inner;
     }
@@ -2331,6 +2367,9 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   function isSafeMarkdownLink(href) {
     const value = String(href || "").trim();
     if (!value) return false;
+    // 控制字符会被浏览器忽略，可用来伪装 javascript:；// 开头是协议相对地址（Windows 上还会变成 UNC 路径）
+    if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+    if (value.startsWith("//")) return false;
     if (/^(?:https?:|mailto:)/i.test(value)) return true;
     return /^(?:#|\/|\.\/|\.\.\/)/.test(value);
   }
@@ -2344,12 +2383,40 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return !/^[a-z][a-z\d+.-]*:/i.test(value);
   }
 
+  const MARKDOWN_ESCAPABLE = "\\`*_{}[]()#+-.!>|~";
+
+  // 找强调的收尾定界符：闭合符前面不能是空白（CommonMark 的 right-flanking 近似）
+  function findEmphasisEnd(source, start, marker) {
+    let index = source.indexOf(marker, start);
+    while (index > start) {
+      const previous = source[index - 1];
+      if (previous && !/\s/.test(previous) && previous !== "\\") return index;
+      index = source.indexOf(marker, index + marker.length);
+    }
+    return -1;
+  }
+
+  // 只有附近确实存在 "](" 时才跑链接正则：满屏 "[" 的输入否则会退化成 O(n^2)
+  function hasLinkTail(source, index) {
+    const close = source.indexOf("](", index + 1);
+    return close !== -1 && close - index <= 1024;
+  }
+
+  function isWordCharacter(char) {
+    return Boolean(char) && /[0-9A-Za-z\u4e00-\u9fff]/.test(char);
+  }
+
   function inlineHtml(text) {
     let out = "";
     let index = 0;
     const source = String(text);
     while (index < source.length) {
       const char = source[index];
+      if (char === "\\" && MARKDOWN_ESCAPABLE.includes(source[index + 1] || "")) {
+        out += escapeHtmlText(source[index + 1]);
+        index += 2;
+        continue;
+      }
       if (char === "`") {
         const end = source.indexOf("`", index + 1);
         if (end > index) {
@@ -2358,8 +2425,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
           continue;
         }
       }
-      if (char === "!" && source[index + 1] === "[") {
-        const match = /^!\[([^\]]*)\]\(((?:[^()\s]|\([^()]*\))*)(?:\s+"([^"]*)")?\)/.exec(source.slice(index));
+      if (char === "!" && source[index + 1] === "[" && hasLinkTail(source, index)) {
+        const match = /^!\[([^\]]{0,1024})\]\(((?:[^()\s]|\([^()]*\)){0,2048})(?:\s+"([^"]{0,256})")?\)/.exec(source.slice(index));
         if (match) {
           const [full, alt, src, title] = match;
           if (isSafeMarkdownImage(src)) {
@@ -2372,8 +2439,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
           continue;
         }
       }
-      if (char === "[") {
-        const match = /^\[([^\]]*)\]\(((?:[^()\s]|\([^()]*\))*)(?:\s+"([^"]*)")?\)/.exec(source.slice(index));
+      if (char === "[" && hasLinkTail(source, index)) {
+        const match = /^\[([^\]]{0,1024})\]\(((?:[^()\s]|\([^()]*\)){0,2048})(?:\s+"([^"]{0,256})")?\)/.exec(source.slice(index));
         if (match) {
           const [full, label, href, title] = match;
           if (isSafeMarkdownLink(href)) {
@@ -2386,8 +2453,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
           continue;
         }
       }
-      if (source.startsWith("**", index)) {
-        const end = source.indexOf("**", index + 2);
+      if (source.startsWith("**", index) && !/\s/.test(source[index + 2] || " ")) {
+        const end = findEmphasisEnd(source, index + 2, "**");
         if (end > index + 1) {
           out += `<strong>${inlineHtml(source.slice(index + 2, end))}</strong>`;
           index = end + 2;
@@ -2395,17 +2462,68 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         }
       }
       if (char === "*" || char === "_") {
-        const end = source.indexOf(char, index + 1);
-        if (end > index + 1) {
-          out += `<em>${inlineHtml(source.slice(index + 1, end))}</em>`;
-          index = end + 1;
-          continue;
+        // 下划线不参与词内强调（snake_case_name 必须原样保留）；星号也要求定界符紧挨非空白
+        const intraWord = char === "_" && (isWordCharacter(source[index - 1]) || false);
+        if (!intraWord && !/\s/.test(source[index + 1] || " ")) {
+          const end = findEmphasisEnd(source, index + 1, char);
+          if (end > index + 1 && !(char === "_" && isWordCharacter(source[end + 1]))) {
+            out += `<em>${inlineHtml(source.slice(index + 1, end))}</em>`;
+            index = end + 1;
+            continue;
+          }
         }
       }
       out += escapeHtmlText(char);
       index += 1;
     }
     return out;
+  }
+
+  // ---------- GFM 表格 ----------
+
+  function splitTableRow(line) {
+    const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+    const cells = [];
+    let current = "";
+    for (let i = 0; i < trimmed.length; i += 1) {
+      const char = trimmed[i];
+      if (char === "\\" && (trimmed[i + 1] === "|" || trimmed[i + 1] === "\\")) {
+        current += trimmed[i + 1];
+        i += 1;
+        continue;
+      }
+      if (char === "|") {
+        cells.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    cells.push(current.trim());
+    return cells;
+  }
+
+  function isTableDelimiterRow(line) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed.includes("-") || !trimmed.includes("|")) return false;
+    return /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?$/.test(trimmed);
+  }
+
+  function isTableRow(line) {
+    return String(line || "").trim().startsWith("|");
+  }
+
+  function tableRowsToHtml(rows) {
+    const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const cell = (value, tag) => `<${tag}>${inlineHtml(String(value == null ? "" : value).split("<br>").join("\n"))
+      .split("\n")
+      .join("<br>")}</${tag}>`;
+    const head = `<thead><tr>${rows[0].concat(new Array(Math.max(0, width - rows[0].length)).fill("")).map((value) => cell(value, "th")).join("")}</tr></thead>`;
+    const body = rows
+      .slice(1)
+      .map((row) => `<tr>${row.concat(new Array(Math.max(0, width - row.length)).fill("")).map((value) => cell(value, "td")).join("")}</tr>`)
+      .join("\n");
+    return `<table>\n${head}\n<tbody>\n${body}\n</tbody>\n</table>`;
   }
 
   function markdownBlocksToHtml(markdown) {
@@ -2441,7 +2559,21 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       flushQuote();
     };
 
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
+      // GFM 表格：当前行以 | 开头且下一行是分隔行
+      if (!codeLines && isTableRow(line) && isTableDelimiterRow(lines[lineIndex + 1])) {
+        flushAll();
+        const rows = [splitTableRow(line)];
+        let cursor = lineIndex + 2;
+        while (cursor < lines.length && isTableRow(lines[cursor])) {
+          rows.push(splitTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        html.push(tableRowsToHtml(rows));
+        lineIndex = cursor - 1;
+        continue;
+      }
       const fence = /^```(.*)$/.exec(line.trim());
       if (codeLines) {
         if (fence) {
@@ -2553,6 +2685,9 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     htmlToText,
     markdownToHtml,
     markdownBlocksToHtml,
+    splitTableRow,
+    isTableDelimiterRow,
+    isTableRow,
     textToHtml,
     textToCsvLines,
     jsonPretty,
@@ -2585,6 +2720,9 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return error;
   }
 
+  // 与桌面版 resource-policy 同口径：单图 5000 万像素上限，必须在分配像素缓冲区之前判断
+  const MAX_DECODE_PIXELS = 50 * 1000 * 1000;
+
   function isBmpBytes(bytes) {
     return bytes && bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d;
   }
@@ -2613,6 +2751,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       throw new Error(`BMP 尺寸不合法：${width}x${heightRaw}`);
     }
     if (compression !== 0) throw unsupported("暂不支持压缩或特殊编码的 BMP（仅支持未压缩的 24/32 位及调色板 BMP）。");
+    if (width * Math.abs(heightRaw) > MAX_DECODE_PIXELS) {
+      const error = new Error(`BMP 像素数超出上限：${width}x${Math.abs(heightRaw)}`);
+      error.code = "IMAGE_TOO_LARGE";
+      throw error;
+    }
     if (![1, 4, 8, 24, 32].includes(bitCount)) throw unsupported(`暂不支持 ${bitCount} 位 BMP。`);
 
     const height = Math.abs(heightRaw);
@@ -2821,13 +2964,47 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return parts;
   }
 
-  // 极简 Markdown -> XHTML（与桌面版一致：标题降一级、无序列表、段落）
+  function textFormats() {
+    if (nodeRequire) return nodeRequire("./text-formats.js");
+    return globalThis.FMOffline.textFormats;
+  }
+
+  function tableToXhtml(rows) {
+    const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const cell = (value, tag) => `<${tag}>${escapeHtmlText(value == null ? "" : value)}</${tag}>`;
+    const body = rows
+      .map((row, index) => {
+        const filled = row.concat(new Array(Math.max(0, width - row.length)).fill(""));
+        return `<tr>${filled.map((value) => cell(value, index === 0 ? "th" : "td")).join("")}</tr>`;
+      })
+      .join("\n");
+    return `<table border="1">\n${body}\n</table>`;
+  }
+
+  // 极简 Markdown -> XHTML（与桌面版一致：标题降一级、无序列表、段落；额外支持 GFM 表格）
   function markdownToXhtml(markdown) {
     const lines = String(markdown == null ? "" : markdown).split("\n");
+    const formats = textFormats();
     const out = [];
     let inList = false;
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
       const trimmed = line.trim();
+      if (formats && formats.isTableRow(line) && formats.isTableDelimiterRow(lines[lineIndex + 1])) {
+        if (inList) {
+          out.push("</ul>");
+          inList = false;
+        }
+        const rows = [formats.splitTableRow(line)];
+        let cursor = lineIndex + 2;
+        while (cursor < lines.length && formats.isTableRow(lines[cursor])) {
+          rows.push(formats.splitTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        out.push(tableToXhtml(rows));
+        lineIndex = cursor - 1;
+        continue;
+      }
       if (!trimmed) {
         if (inList) {
           out.push("</ul>");
@@ -2972,6 +3149,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return globalThis.FMOffline.zipWriter;
   }
 
+  function textFormats() {
+    if (nodeRequire) return nodeRequire("./text-formats.js");
+    return globalThis.FMOffline.textFormats;
+  }
+
   function escapeXml(text) {
     return String(text == null ? "" : text)
       .split("&")
@@ -3016,20 +3198,25 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     + [44, 36, 30, 26, 24, 22].map((size, index) => headingStyle(index + 1, size)).join("")
     + "</w:styles>";
 
-  function runs(text) {
+  // rPr 必须写在每个 <w:r> 里：只放在 <w:pPr> 中只会影响段落标记，正文仍是默认字体
+  function runs(text, runProperties) {
     const lines = String(text == null ? "" : text).split("\n");
+    const rPr = runProperties || "";
     return lines
-      .map((line, index) => (index === 0 ? "" : "<w:r><w:br/></w:r>") + `<w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`)
+      .map((line, index) => (index === 0 ? "" : `<w:r>${rPr}<w:br/></w:r>`)
+        + `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r>`)
       .join("");
   }
+
+  const MONO_RPR = '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr>';
 
   function paragraph(text, options = {}) {
     const properties = [];
     if (options.style) properties.push(`<w:pStyle w:val="${options.style}"/>`);
     if (options.indent) properties.push(`<w:ind w:left="${options.indent}"/>`);
-    if (options.mono) properties.push('<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr>');
+    if (options.mono) properties.push(MONO_RPR);
     const pPr = properties.length > 0 ? `<w:pPr>${properties.join("")}</w:pPr>` : "";
-    return `<w:p>${pPr}${runs(text)}</w:p>`;
+    return `<w:p>${pPr}${runs(text, options.mono ? MONO_RPR : "")}</w:p>`;
   }
 
   function tableXml(rows) {
@@ -3059,7 +3246,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         if (block.type === "bullet") return paragraph(`• ${block.text}`, { indent: 360 });
         if (block.type === "ordered") return paragraph(`${block.index || 1}. ${block.text}`, { indent: 360 });
         if (block.type === "code") return paragraph(block.text, { mono: true, indent: 240 });
-        if (block.type === "table") return tableXml(block.rows || []);
+        // 表格后必须再跟一个空段落：Word 自己的写法如此，紧跟 sectPr 的表格在部分版本里会报错
+        if (block.type === "table") return `${tableXml(block.rows || [])}<w:p/>`;
         return paragraph(block.text);
       })
       .join("");
@@ -3080,10 +3268,25 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         .map((chunk) => ({ type: "paragraph", text: chunk }));
     }
     const blocks = [];
+    const formats = textFormats();
+    const lines = text.split("\n");
     let codeLines = null;
     let orderedIndex = 0;
-    for (const line of text.split("\n")) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
       const trimmed = line.trim();
+      // GFM 表格转成真正的 DOCX 表格，而不是一行竖线文本
+      if (!codeLines && formats && formats.isTableRow(line) && formats.isTableDelimiterRow(lines[lineIndex + 1])) {
+        const rows = [formats.splitTableRow(line)];
+        let cursor = lineIndex + 2;
+        while (cursor < lines.length && formats.isTableRow(lines[cursor])) {
+          rows.push(formats.splitTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        blocks.push({ type: "table", rows });
+        lineIndex = cursor - 1;
+        continue;
+      }
       if (/^```/.test(trimmed)) {
         if (codeLines) {
           blocks.push({ type: "code", text: codeLines.join("\n") });
@@ -3188,9 +3391,18 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return { code, messages: WARNING_MESSAGES[code] };
   }
 
+  // 分隔符有两个方向：读 CSV 用 inputDelimiter（tsv 恒为制表符），写 CSV 用 outputDelimiter。
+  // UI 上只有一个「CSV 分隔符」，它同时决定「怎么读 csv 源」和「怎么写 csv 产物」。
+  function inputDelimiterFor(source, options) {
+    return source === "tsv" ? "\t" : options.delimiter || ",";
+  }
+
+  function outputDelimiterFor(target, options) {
+    return target === "tsv" ? "\t" : options.delimiter || ",";
+  }
+
   function tabularRecords(raw, source, options, textFormats) {
-    const delimiter = source === "tsv" ? "\t" : options.delimiter || ",";
-    return textFormats.parseCsvRecords(raw, { delimiter });
+    return textFormats.parseCsvRecords(raw, { delimiter: inputDelimiterFor(source, options) });
   }
 
   function isTabular(source) {
@@ -3206,14 +3418,13 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     const { text: textFormats, ebook, office, xml } = deps();
     const warnings = [];
     const input = String(raw == null ? "" : raw);
-    const delimiter = options.delimiter || ",";
+    const inputDelimiter = inputDelimiterFor(source, options);
 
+    // 统一成「逗号分隔的 CSV 文本」，后面的 csvToXxx 都按逗号解析
     const asCsvText = () => {
-      if (source === "tsv") {
-        warnings.push(warning("TSV_NORMALIZED"));
-        return textFormats.serializeCsv(tabularRecords(input, source, options, textFormats), { delimiter: "," });
-      }
-      return input;
+      if (source === "tsv") warnings.push(warning("TSV_NORMALIZED"));
+      if (inputDelimiter === ",") return input;
+      return textFormats.serializeCsv(tabularRecords(input, source, options, textFormats), { delimiter: "," });
     };
 
     if (target === "txt") {
@@ -3249,7 +3460,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     }
 
     if (target === "csv" || target === "tsv") {
-      const outDelimiter = target === "tsv" ? "\t" : delimiter;
+      const outDelimiter = outputDelimiterFor(target, options);
       if (source === "json") {
         const csv = textFormats.jsonToCsv(input);
         if (target === "csv" && outDelimiter === ",") {
@@ -3321,7 +3532,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     global.FMOffline.formatMap = api;
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const EXTENSION_ALIASES = { jpeg: "jpg", markdown: "md", htm: "html", tif: "tiff" };
+  // 全部用 null 原型：文件名叫 a.constructor / a.__proto__ 时不能命中 Object.prototype 上的成员
+  const EXTENSION_ALIASES = Object.assign(Object.create(null), { jpeg: "jpg", markdown: "md", htm: "html", tif: "tiff" });
 
   function normalizeExtension(value) {
     const raw = String(value == null ? "" : value).trim().toLowerCase().replace(/^\./, "");
@@ -3341,7 +3553,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   const JSON_TARGETS = ["json", "csv", "md", "txt", "zip"];
   const XML_TARGETS = ["json", "txt", "zip"];
 
-  const CATEGORIES = {
+  const CATEGORIES = Object.assign(Object.create(null), {
     png: "image",
     jpg: "image",
     webp: "image",
@@ -3358,7 +3570,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     tsv: "table",
     json: "data",
     xml: "data",
-  };
+  });
 
   const TARGETS = {
     image: IMAGE_TARGETS,
@@ -3394,7 +3606,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       .replace(/[\u0000-\u001f\u007f-\u009f]/g, "")
       .replace(/[/?<>\\:*|"]/g, "")
       .replace(/[. ]+$/, "");
-    return RESERVED_NAMES.test(cleaned) ? "" : cleaned;
+    // con.txt / AUX.TXT 在 Windows 上同样是设备名，要按主干判断
+    return RESERVED_NAMES.test(cleaned.split(".")[0]) ? "" : cleaned;
   }
 
   function safeBaseName(originalName) {
@@ -3412,7 +3625,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return `${safeBaseName(originalName)}.${suffix}`;
   }
 
-  const MIME_TYPES = {
+  const MIME_TYPES = Object.assign(Object.create(null), {
     png: "image/png",
     jpg: "image/jpeg",
     webp: "image/webp",
@@ -3431,7 +3644,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     epub: "application/epub+zip",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     zip: "application/zip",
-  };
+  });
 
   function mimeTypeFor(extension) {
     return MIME_TYPES[normalizeExtension(extension)] || "application/octet-stream";
@@ -3500,7 +3713,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       "option.paperLetter": "Letter",
       "option.margin": "页边距（pt）",
       "option.mergePdf": "多张图片合并成一个 PDF（按队列顺序）",
-      "option.delimiter": "CSV 分隔符",
+      "option.delimiter": "CSV 分隔符（读取和写出都用它）",
       "option.delimiterComma": "逗号 ,",
       "option.delimiterSemicolon": "分号 ;",
       "option.delimiterTab": "制表符 Tab",
@@ -3582,7 +3795,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       "option.paperLetter": "Letter",
       "option.margin": "Margin (pt)",
       "option.mergePdf": "Merge images into one PDF (queue order)",
-      "option.delimiter": "CSV delimiter",
+      "option.delimiter": "CSV delimiter (used for both reading and writing)",
       "option.delimiterComma": "Comma ,",
       "option.delimiterSemicolon": "Semicolon ;",
       "option.delimiterTab": "Tab",
@@ -3899,6 +4112,15 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return document.getElementById(id);
   }
 
+  // Safari 在 file:// 下读 localStorage 会抛 SecurityError，连 typeof 都会触发 getter，必须包住
+  function safeStorage() {
+    try {
+      return typeof localStorage === "undefined" ? null : localStorage;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function t(key, params) {
     return i18n ? i18n.t(key, params) : key;
   }
@@ -3919,8 +4141,10 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   }
 
   function readStoredTheme() {
+    const storage = safeStorage();
+    if (!storage) return "auto";
     try {
-      const value = localStorage.getItem(THEME_STORAGE_KEY);
+      const value = storage.getItem(THEME_STORAGE_KEY);
       return THEME_ORDER.includes(value) ? value : "auto";
     } catch (error) {
       return "auto";
@@ -3933,7 +4157,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     elements.themeToggleLabel.textContent = t(`theme.${state.theme}`);
     elements.themeToggle.setAttribute("aria-pressed", state.theme === "dark" ? "true" : "false");
     try {
-      localStorage.setItem(THEME_STORAGE_KEY, state.theme);
+      const storage = safeStorage();
+      if (storage) storage.setItem(THEME_STORAGE_KEY, state.theme);
     } catch (error) {
       // 隐私模式下 localStorage 不可用时忽略即可
     }
@@ -3967,8 +4192,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   function statusLabel(item) {
     if (item.status === "success") {
       // 合并 PDF / 打包 ZIP 时单个文件没有独立产物，只报完成，不报 0 B
-      if (!item.result) return t("queueStatus.done");
-      return t("queueStatus.success", { size: formatBytes(item.result.size) });
+      const base = item.result
+        ? t("queueStatus.success", { size: formatBytes(item.result.size) })
+        : t("queueStatus.done");
+      const notes = warningText(item.result ? item.result.warnings : []);
+      return notes ? `${base} · ${notes}` : base;
     }
     if (item.status === "error") return item.detail || t("queueStatus.error");
     if (item.status === "converting") return t("queueStatus.converting");
@@ -4229,9 +4457,16 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return new TextEncoder().encode(String(data));
   }
 
-  function makeResult(name, bytes, extension) {
+  function makeResult(name, bytes, extension, warnings) {
     const blob = new Blob([bytes], { type: formatMap.mimeTypeFor(extension) });
-    return { name, blob, size: blob.size };
+    return { name, blob, size: blob.size, warnings: warnings || [] };
+  }
+
+  // 警告是 { code, messages: { zhCN, enUS } }，与桌面版同结构
+  function warningText(warnings) {
+    if (!warnings || warnings.length === 0) return "";
+    const key = i18n && i18n.language === "en-US" ? "enUS" : "zhCN";
+    return warnings.map((warning) => (warning.messages ? warning.messages[key] : warning.code)).join(" ");
   }
 
   async function convertOne(item, target) {
@@ -4247,16 +4482,16 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
           paper: elements.pdfPaper.value,
           margin: Number(elements.pdfMargin.value) || 0,
         });
-        return makeResult(formatMap.outputNameFor(item.name, "pdf"), pdf, "pdf");
+        return makeResult(formatMap.outputNameFor(item.name, "pdf"), pdf, "pdf", converted.warnings);
       }
-      return makeResult(formatMap.outputNameFor(item.name, target), converted.data, target);
+      return makeResult(formatMap.outputNameFor(item.name, target), converted.data, target, converted.warnings);
     }
     const source = item.extension || "txt";
     const raw = await readFileAsText(item.file);
     const options = textOptions();
     if (!options.title) options.title = formatMap.safeBaseName(item.name);
     const converted = await convertText.convertTextDocument(raw, source, target, options);
-    return makeResult(formatMap.outputNameFor(item.name, target), toBytes(converted.data), target);
+    return makeResult(formatMap.outputNameFor(item.name, target), toBytes(converted.data), target, converted.warnings);
   }
 
   async function convertQueueToZip(items) {
@@ -4293,6 +4528,16 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     return makeResult(formatMap.outputNameFor(items[0].name, "pdf"), pdf, "pdf");
   }
 
+  // 整批失败（打包 / 合并 PDF 这种一次成一个产物的路径）时，把错误落到每个文件上
+  function markBatchFailed(items, error) {
+    const detail = t("error.convert", { message: error && error.message ? error.message : String(error) });
+    for (const item of items) {
+      item.status = "error";
+      item.result = null;
+      item.detail = detail;
+    }
+  }
+
   async function convertAll() {
     if (state.converting || state.items.length === 0) return;
     if (!state.target) {
@@ -4322,12 +4567,16 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         }
         renderQueue();
         setStatus(t("status.converting", { current: 1, total: 1, name: state.items[0].name }));
-        const result = await convertQueueToZip(state.items);
-        for (const item of state.items) {
-          item.status = "success";
-          item.result = null;
+        try {
+          const result = await convertQueueToZip(state.items);
+          for (const item of state.items) {
+            item.status = "success";
+            item.result = null;
+          }
+          state.extraResults = [result];
+        } catch (error) {
+          markBatchFailed(state.items, error);
         }
-        state.extraResults = [result];
       } else if (mergePdf) {
         const images = state.items.filter((item) => item.category === "image");
         setStatus(t("status.converting", { current: 1, total: 1, name: images[0].name }));
@@ -4335,13 +4584,17 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
           item.status = "converting";
         }
         renderQueue();
-        const result = await convertMergedPdf(images);
-        for (const item of images) {
-          item.status = "success";
-          item.result = null;
+        try {
+          const result = await convertMergedPdf(images);
+          for (const item of images) {
+            item.status = "success";
+            item.result = null;
+          }
+          state.extraResults = [result];
+          showToast(t("toast.merged", { count: images.length }));
+        } catch (error) {
+          markBatchFailed(images, error);
         }
-        state.extraResults = [result];
-        showToast(t("toast.merged", { count: images.length }));
       } else {
         let index = 0;
         for (const item of state.items) {
@@ -4422,15 +4675,39 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     downloadWithAnchor(name, blob);
   }
 
+  // 同名结果（不同目录的同名文件）必须改名，否则 ZIP 里会出现重复条目，解压时互相覆盖
+  function uniqueName(name, used) {
+    if (!used.has(name)) {
+      used.add(name);
+      return name;
+    }
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : "";
+    let suffix = 2;
+    let candidate = `${stem}-${suffix}${extension}`;
+    while (used.has(candidate)) {
+      suffix += 1;
+      candidate = `${stem}-${suffix}${extension}`;
+    }
+    used.add(candidate);
+    return candidate;
+  }
+
   async function downloadAll() {
     const results = state.allResults || [];
     if (results.length === 0) return;
-    const entries = [];
-    for (const result of results) {
-      entries.push({ name: result.name, data: new Uint8Array(await result.blob.arrayBuffer()) });
+    try {
+      const used = new Set();
+      const entries = [];
+      for (const result of results) {
+        entries.push({ name: uniqueName(result.name, used), data: new Uint8Array(await result.blob.arrayBuffer()) });
+      }
+      const bytes = await zipWriter.createZipCompressed(entries);
+      saveBlob("flyingmouse-offline.zip", new Blob([bytes], { type: "application/zip" }));
+    } catch (error) {
+      showToast(t("error.convert", { message: error && error.message ? error.message : String(error) }), "error");
     }
-    const bytes = await zipWriter.createZipCompressed(entries);
-    saveBlob("flyingmouse-offline.zip", new Blob([bytes], { type: "application/zip" }));
   }
 
   // 与桌面版一致：用户手动选择目标格式时按源扩展名记忆，下次同类文件默认这个目标
@@ -4442,7 +4719,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       state.target,
     );
     try {
-      localStorage.setItem(preferencesModule.STORAGE_KEY, JSON.stringify(state.preferences));
+      const storage = safeStorage();
+      if (storage) storage.setItem(preferencesModule.STORAGE_KEY, JSON.stringify(state.preferences));
     } catch (error) {
       // 隐私模式下存不了偏好，不影响转换
     }
@@ -4459,7 +4737,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
 
   function removeItem(index) {
     if (state.converting) return;
-    state.items.splice(index, 1);
+    const [removed] = state.items.splice(index, 1);
+    if (removed && removed.thumbnail) {
+      URL.revokeObjectURL(removed.thumbnail);
+      state.objectUrls = state.objectUrls.filter((url) => url !== removed.thumbnail);
+    }
     renderQueue();
     renderTargets();
     renderResults();
@@ -4562,12 +4844,13 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
 
   function initialize() {
     collectElements();
+    const storage = safeStorage();
     i18n = i18nModule.createI18n({
-      storage: typeof localStorage === "undefined" ? null : localStorage,
+      storage,
       systemLanguage: navigator.language,
       messages,
     });
-    if (preferencesModule) state.preferences = preferencesModule.readPreferences(localStorage);
+    if (preferencesModule) state.preferences = preferencesModule.readPreferences(storage);
     applyTheme(readStoredTheme());
     if (mouseAssets.idle) elements.brandMouse.src = mouseAssets.idle;
     setMouseState("upload");

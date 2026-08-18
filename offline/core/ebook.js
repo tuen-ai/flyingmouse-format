@@ -78,13 +78,47 @@
     return parts;
   }
 
-  // 极简 Markdown -> XHTML（与桌面版一致：标题降一级、无序列表、段落）
+  function textFormats() {
+    if (nodeRequire) return nodeRequire("./text-formats.js");
+    return globalThis.FMOffline.textFormats;
+  }
+
+  function tableToXhtml(rows) {
+    const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+    const cell = (value, tag) => `<${tag}>${escapeHtmlText(value == null ? "" : value)}</${tag}>`;
+    const body = rows
+      .map((row, index) => {
+        const filled = row.concat(new Array(Math.max(0, width - row.length)).fill(""));
+        return `<tr>${filled.map((value) => cell(value, index === 0 ? "th" : "td")).join("")}</tr>`;
+      })
+      .join("\n");
+    return `<table border="1">\n${body}\n</table>`;
+  }
+
+  // 极简 Markdown -> XHTML（与桌面版一致：标题降一级、无序列表、段落；额外支持 GFM 表格）
   function markdownToXhtml(markdown) {
     const lines = String(markdown == null ? "" : markdown).split("\n");
+    const formats = textFormats();
     const out = [];
     let inList = false;
-    for (const line of lines) {
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const line = lines[lineIndex];
       const trimmed = line.trim();
+      if (formats && formats.isTableRow(line) && formats.isTableDelimiterRow(lines[lineIndex + 1])) {
+        if (inList) {
+          out.push("</ul>");
+          inList = false;
+        }
+        const rows = [formats.splitTableRow(line)];
+        let cursor = lineIndex + 2;
+        while (cursor < lines.length && formats.isTableRow(lines[cursor])) {
+          rows.push(formats.splitTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        out.push(tableToXhtml(rows));
+        lineIndex = cursor - 1;
+        continue;
+      }
       if (!trimmed) {
         if (inList) {
           out.push("</ul>");

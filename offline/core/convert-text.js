@@ -45,9 +45,18 @@
     return { code, messages: WARNING_MESSAGES[code] };
   }
 
+  // 分隔符有两个方向：读 CSV 用 inputDelimiter（tsv 恒为制表符），写 CSV 用 outputDelimiter。
+  // UI 上只有一个「CSV 分隔符」，它同时决定「怎么读 csv 源」和「怎么写 csv 产物」。
+  function inputDelimiterFor(source, options) {
+    return source === "tsv" ? "\t" : options.delimiter || ",";
+  }
+
+  function outputDelimiterFor(target, options) {
+    return target === "tsv" ? "\t" : options.delimiter || ",";
+  }
+
   function tabularRecords(raw, source, options, textFormats) {
-    const delimiter = source === "tsv" ? "\t" : options.delimiter || ",";
-    return textFormats.parseCsvRecords(raw, { delimiter });
+    return textFormats.parseCsvRecords(raw, { delimiter: inputDelimiterFor(source, options) });
   }
 
   function isTabular(source) {
@@ -63,14 +72,13 @@
     const { text: textFormats, ebook, office, xml } = deps();
     const warnings = [];
     const input = String(raw == null ? "" : raw);
-    const delimiter = options.delimiter || ",";
+    const inputDelimiter = inputDelimiterFor(source, options);
 
+    // 统一成「逗号分隔的 CSV 文本」，后面的 csvToXxx 都按逗号解析
     const asCsvText = () => {
-      if (source === "tsv") {
-        warnings.push(warning("TSV_NORMALIZED"));
-        return textFormats.serializeCsv(tabularRecords(input, source, options, textFormats), { delimiter: "," });
-      }
-      return input;
+      if (source === "tsv") warnings.push(warning("TSV_NORMALIZED"));
+      if (inputDelimiter === ",") return input;
+      return textFormats.serializeCsv(tabularRecords(input, source, options, textFormats), { delimiter: "," });
     };
 
     if (target === "txt") {
@@ -106,7 +114,7 @@
     }
 
     if (target === "csv" || target === "tsv") {
-      const outDelimiter = target === "tsv" ? "\t" : delimiter;
+      const outDelimiter = outputDelimiterFor(target, options);
       if (source === "json") {
         const csv = textFormats.jsonToCsv(input);
         if (target === "csv" && outDelimiter === ",") {

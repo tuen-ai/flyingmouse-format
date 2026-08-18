@@ -36,10 +36,20 @@ function mascotDataUrls() {
   return assets;
 }
 
-// 内联脚本里出现 </script> 会提前结束标签，统一转义
-function escapeScript(code) {
-  return code.split("</script>").join("<\\/script>");
+// 内联脚本里出现 </script> 会提前结束标签，统一转义。
+// 另外 HTML 解析器有「script data double escaped」状态：源码里同时出现 <!-- 和 <script 时，
+// </script> 会被当成普通文本，整段脚本被吞掉。这种组合无法安全地机械转义，直接 fail closed。
+function escapeScript(code, source) {
+  if (/<script/i.test(code)) {
+    throw new Error(`${source} 含有 "<script" 字面量，会破坏内联脚本，请拆成 "<" + "script"`);
+  }
+  // HTML 分词器遇到 </script 后跟空白、/ 或 > 就结束脚本，且大小写不敏感，所以不能只替换精确的 "</script>"
+  return code.replace(/<\/(script)/gi, (match, tag) => `<\\/${tag}`);
 }
+
+// 构建产物里的严格 CSP（不含 'self'：单文件不应再加载任何本地或远程资源）
+const STRICT_CSP = "default-src 'none'; img-src data: blob:; media-src blob:; style-src 'unsafe-inline'; "
+  + "script-src 'unsafe-inline'; connect-src blob:; form-action 'none'; base-uri 'none'";
 
 function build() {
   const version = JSON.parse(readText("package.json")).version;
@@ -49,7 +59,12 @@ function build() {
   const cssMatch = /\n?\s*<link rel="stylesheet" href="([^"]+)">/.exec(html);
   if (!cssMatch) throw new Error("offline/index.html 缺少样式表引用");
   const css = readText(resolveFromOffline(cssMatch[1]));
-  html = html.replace(cssMatch[0], `\n    <style>\n${css}\n    </style>`);
+  // 用函数形式替换：源码里的 $&、$` 等会被 String.replace 当成替换模式，静默破坏产物
+  html = html.replace(cssMatch[0], () => `\n    <style>\n${css}\n    </style>`);
+
+  const cspMatch = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html);
+  if (!cspMatch) throw new Error("offline/index.html 缺少 CSP meta");
+  html = html.replace(cspMatch[0], () => `<meta http-equiv="Content-Security-Policy" content="${STRICT_CSP}">`);
 
   const scriptPattern = /[ \t]*<script src="([^"]+)"><\/script>\n?/g;
   const scripts = [];
@@ -68,9 +83,9 @@ function build() {
 
   scripts.forEach((script, index) => {
     const code = readText(resolveFromOffline(script.source));
-    const inlined = `    <script>\n${escapeScript(code)}\n    </script>\n`;
+    const inlined = `    <script>\n${escapeScript(code, script.source)}\n    </script>\n`;
     const prefix = index === scripts.length - 1 ? `    <script>\n${runtimeScript}\n    </script>\n` : "";
-    html = html.replace(script.tag, prefix + inlined);
+    html = html.replace(script.tag, () => prefix + inlined);
   });
 
   // 页面里剩下的鼠鼠图片路径换成内联 data URI
@@ -80,9 +95,19 @@ function build() {
     .split('src="../public/assets/mouse-format/mouse-upload.png"')
     .join(`src="${assets.upload}"`);
 
-  if (/src="\.\.\//.test(html) || /href="\.\//.test(html) || /<script src=/.test(html)) {
-    throw new Error("构建产物仍然引用了外部文件");
+  // fail closed：任何还能发起请求的写法都不许留在产物里
+  const externalPatterns = [
+    /<script\s+src=/i,
+    /<link\s[^>]*href=/i,
+    /(?:src|href)="(?:https?:)?\/\//i,
+    /(?:src|href)="\.\.?\//i,
+    /@import/i,
+    /url\(\s*['"]?(?:https?:)?\/\//i,
+  ];
+  for (const pattern of externalPatterns) {
+    if (pattern.test(html)) throw new Error(`构建产物仍然可能发起外部请求：${pattern}`);
   }
+  if (!html.includes(STRICT_CSP)) throw new Error("构建产物缺少严格 CSP");
   return html;
 }
 

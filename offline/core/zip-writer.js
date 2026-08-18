@@ -58,12 +58,24 @@
    * entries: [{ name, data, deflated?: Uint8Array }]
    * 有 deflated 时用方法 8（调用方已压缩），否则 store。
    */
+  // 条目名兜底：即使上层忘了 sanitize，也不允许 ../、绝对路径、反斜杠和控制字符进包
+  function safeEntryName(name) {
+    const cleaned = String(name == null ? "" : name)
+      .replace(/\\/g, "/")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .split("/")
+      .filter((part) => part && part !== "." && part !== "..")
+      .join("/");
+    return cleaned || "file";
+  }
+
   function createZip(entries) {
+    if (entries.length > 65535) throw new Error("ZIP 条目数超过 65535，请分批打包。");
     const chunks = [];
     const central = [];
     let offset = 0;
     for (const entry of entries) {
-      const nameBytes = encoder.encode(entry.name);
+      const nameBytes = encoder.encode(safeEntryName(entry.name));
       const raw = toBytes(entry.data);
       const useDeflate = entry.deflated instanceof Uint8Array && entry.deflated.length < raw.length;
       const stored = useDeflate ? entry.deflated : raw;
@@ -147,5 +159,5 @@
     return createZip(prepared);
   }
 
-  return { createZip, createZipCompressed, crc32, toBytes, concat };
+  return { createZip, createZipCompressed, crc32, toBytes, concat, safeEntryName };
 });

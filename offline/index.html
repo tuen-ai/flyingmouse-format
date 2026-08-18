@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- 离线单文件：禁止任何外部连接（构建产物内联全部样式、脚本与图片） -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; media-src blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src blob:; form-action 'none'; base-uri 'none'">
+    <!-- 源码页允许 'self'（直接打开 offline/index.html 调试用）；构建时会换成不含 'self' 的严格策略 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src blob:; form-action 'none'; base-uri 'none'">
     <title>FlyingMouse Format Offline · 飞鼠格式离线版</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
@@ -127,7 +127,7 @@
 
             <div class="field-block" id="textOptions" hidden>
               <label class="field">
-                <span class="field-label" data-i18n="option.delimiter">CSV 分隔符</span>
+                <span class="field-label" data-i18n="option.delimiter">CSV 分隔符（读取和写出都用它）</span>
                 <select id="csvDelimiter">
                   <option value="," data-i18n="option.delimiterComma">逗号 ,</option>
                   <option value=";" data-i18n="option.delimiterSemicolon">分号 ;</option>
