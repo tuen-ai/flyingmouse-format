@@ -1,0 +1,117 @@
+// 把 offline/ 源码打包成一个自包含的离线 HTML 工具（无外部请求、无 node_modules 依赖）。
+// 用法：node scripts/build-offline.js [--check]
+//   默认写入 offline/dist/flyingmouse-format-offline.html；--check 只校验产物是否与源码一致（CI/测试用）。
+// 构建必须可复现：同样的源码产出同样的字节（鼠鼠图片按固定参数缩放，不写时间戳）。
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { shrinkPng } = require("./png-mini.js");
+
+const ROOT = path.join(__dirname, "..");
+const OFFLINE_DIR = path.join(ROOT, "offline");
+const OUTPUT_PATH = path.join(OFFLINE_DIR, "dist", "flyingmouse-format-offline.html");
+
+// 鼠鼠状态图：桌面版 9 态里离线版用得到的 7 态（离线版没有 OCR / PDF 分页）
+const MOUSE_STATES = ["idle", "upload", "analyzing", "converting", "batch", "success", "error"];
+const MASCOT_MAX_SIZE = 320;
+const MASCOT_QUANTIZE_BITS = 3;
+
+function readText(relativePath) {
+  return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
+}
+
+function resolveFromOffline(source) {
+  const cleaned = source.replace(/^\.\//, "");
+  if (cleaned.startsWith("../")) return path.posix.normalize(path.posix.join("offline", cleaned));
+  return path.posix.join("offline", cleaned);
+}
+
+function mascotDataUrls() {
+  const assets = {};
+  for (const stateName of MOUSE_STATES) {
+    const file = path.join(ROOT, "public", "assets", "mouse-format", `mouse-${stateName}.png`);
+    const shrunk = shrinkPng(fs.readFileSync(file), { maxSize: MASCOT_MAX_SIZE, quantizeBits: MASCOT_QUANTIZE_BITS });
+    assets[stateName] = `data:image/png;base64,${shrunk.toString("base64")}`;
+  }
+  return assets;
+}
+
+// 内联脚本里出现 </script> 会提前结束标签，统一转义
+function escapeScript(code) {
+  return code.split("</script>").join("<\\/script>");
+}
+
+function build() {
+  const version = JSON.parse(readText("package.json")).version;
+  const assets = mascotDataUrls();
+  let html = readText("offline/index.html");
+
+  const cssMatch = /\n?\s*<link rel="stylesheet" href="([^"]+)">/.exec(html);
+  if (!cssMatch) throw new Error("offline/index.html 缺少样式表引用");
+  const css = readText(resolveFromOffline(cssMatch[1]));
+  html = html.replace(cssMatch[0], `\n    <style>\n${css}\n    </style>`);
+
+  const scriptPattern = /[ \t]*<script src="([^"]+)"><\/script>\n?/g;
+  const scripts = [];
+  let match = scriptPattern.exec(html);
+  while (match) {
+    scripts.push({ tag: match[0], source: match[1] });
+    match = scriptPattern.exec(html);
+  }
+  if (scripts.length === 0) throw new Error("offline/index.html 缺少脚本引用");
+
+  const runtimeScript = "(function (global) {\n"
+    + "  global.FMOffline = global.FMOffline || {};\n"
+    + `  global.FMOffline.mouseAssets = ${JSON.stringify(assets, null, 2)};\n`
+    + `  global.FMOffline.buildInfo = { version: ${JSON.stringify(version)} };\n`
+    + "})(typeof globalThis !== \"undefined\" ? globalThis : this);";
+
+  scripts.forEach((script, index) => {
+    const code = readText(resolveFromOffline(script.source));
+    const inlined = `    <script>\n${escapeScript(code)}\n    </script>\n`;
+    const prefix = index === scripts.length - 1 ? `    <script>\n${runtimeScript}\n    </script>\n` : "";
+    html = html.replace(script.tag, prefix + inlined);
+  });
+
+  // 页面里剩下的鼠鼠图片路径换成内联 data URI
+  html = html
+    .split('src="../public/assets/mouse-format/mouse-idle.png"')
+    .join(`src="${assets.idle}"`)
+    .split('src="../public/assets/mouse-format/mouse-upload.png"')
+    .join(`src="${assets.upload}"`);
+
+  if (/src="\.\.\//.test(html) || /href="\.\//.test(html) || /<script src=/.test(html)) {
+    throw new Error("构建产物仍然引用了外部文件");
+  }
+  return html;
+}
+
+function main() {
+  const check = process.argv.includes("--check");
+  const html = build();
+  const bytes = Buffer.from(html, "utf8");
+  const digest = crypto.createHash("sha256").update(bytes).digest("hex");
+
+  if (check) {
+    if (!fs.existsSync(OUTPUT_PATH)) {
+      console.error("FAILED: 缺少构建产物，请运行 node scripts/build-offline.js");
+      process.exit(1);
+    }
+    const current = fs.readFileSync(OUTPUT_PATH);
+    if (!current.equals(bytes)) {
+      console.error("FAILED: offline/dist 产物与源码不一致，请重新运行 node scripts/build-offline.js");
+      process.exit(1);
+    }
+    console.log(`OK 产物与源码一致（${(bytes.length / 1024).toFixed(1)} KB, sha256 ${digest.slice(0, 16)}…）`);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
+  fs.writeFileSync(OUTPUT_PATH, bytes);
+  console.log(`OK ${path.relative(ROOT, OUTPUT_PATH)} -> ${(bytes.length / 1024).toFixed(1)} KB`);
+  console.log(`sha256 ${digest}`);
+}
+
+if (require.main === module) main();
+
+module.exports = { build, MOUSE_STATES, OUTPUT_PATH };

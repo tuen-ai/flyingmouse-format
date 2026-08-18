@@ -41,8 +41,20 @@
 - TGA 图片可转换为 PNG/JPG/WebP 等（内置 ffmpeg 解码，实验性）。
 - 相机 RAW 原片（CR2/CR3/NEF/ARW/DNG 等）可转换为 JPG/PNG/WebP/TIFF 等（内置 dcraw 解码，Windows 版，实验性）。
 - 资源保护：单图 50MP / 16384px、图片合并 PDF 总计 100MP、批量 2GB、PDF 不限页数（1:1 转换，长文档加载较慢）、OCR 不限页数。
+- 离线单文件网页版：`offline/dist/flyingmouse-format-offline.html` 一个文件、双击用浏览器打开就能用，免安装、免联网、无服务端，支持图片互转 / 图片合并 PDF / 文本与表格互转 / EPUB / DOCX / 打包 ZIP（详见 [docs/离线单文件工具.md](docs/离线单文件工具.md)）。
 
 > **合规声明 Compliance Notice：本软件仅支持普通音频格式转换（MP3 / WAV / FLAC / AAC / OGG 等），不支持任何音乐平台的加密特殊格式。请支持正版音乐，尊重创作者。音频文件版权归原作者/唱片公司所有，本工具与各音乐平台无任何关联。本软件仅供个人免费使用，禁止商业售卖/转卖/套壳换皮重新发布。**
+
+### 免安装：离线单文件网页版
+
+装不了桌面版（公司电脑、Mac、临时用一次）时，用离线单文件版：
+
+1. 取仓库里的 `offline/dist/flyingmouse-format-offline.html`（约 450 KB，一个文件就是全部）。
+2. 拷到任意电脑，双击用 Chrome / Edge / Firefox 打开，断网也能用。
+3. 拖入文件 → 选目标格式 → 开始转换 → 保存；全部计算都在浏览器里完成，文件不上传。
+
+能力范围：图片（PNG/JPG/WebP/BMP/ICO 互转、图片合并 PDF）、文本与表格（TXT/MD/HTML/CSV/TSV/JSON/XML 互转、EPUB、DOCX）、任意文件打包 ZIP。
+音视频、Office、PDF 解析、OCR 仍然需要桌面版的本地引擎。自己重新构建：`npm run build:offline`。
 
 ### 快速开始
 
@@ -130,8 +142,20 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - TGA images convert to PNG/JPG/WebP and more (built-in ffmpeg decoding, experimental).
 - Camera RAW files (CR2/CR3/NEF/ARW/DNG, etc.) convert to JPG/PNG/WebP/TIFF and more (built-in dcraw decoding, Windows build, experimental).
 - Resource safeguards: 50 MP / 16384 px per image, 100 MP image-to-PDF decode budget, 2 GB batches, 500 PDF pages, and 100 OCR pages.
+- Offline single-file web build: `offline/dist/flyingmouse-format-offline.html` runs in any browser with no install, no server and no network — image conversion, images-to-PDF, text/table conversion, EPUB, DOCX and ZIP packaging (see [docs/离线单文件工具.md](docs/离线单文件工具.md)).
 
 > **Compliance Notice: this software supports only ordinary audio format conversion (MP3 / WAV / FLAC / AAC / OGG etc.) and does NOT support encrypted special formats from any music platform. Please support the artists and respect copyright. Audio file copyrights belong to the respective artists/labels; this tool is not affiliated with any music platform. The software is free for personal use only; commercial resale or repackaging is prohibited.**
+
+### No install: the offline single-file build
+
+When the desktop app cannot be installed (locked-down machine, Mac, one-off job), use the single HTML file:
+
+1. Grab `offline/dist/flyingmouse-format-offline.html` from this repository (~450 KB, everything is inlined).
+2. Copy it anywhere and open it in Chrome / Edge / Firefox. It works with the network switched off.
+3. Drop files, pick a target format, convert, save. Every byte stays in the browser.
+
+Scope: images (PNG/JPG/WebP/BMP/ICO, images-to-PDF), text and tables (TXT/MD/HTML/CSV/TSV/JSON/XML, EPUB, DOCX) and ZIP packaging for any file.
+Audio, video, Office and PDF parsing still need the desktop app's local engines. Rebuild it yourself with `npm run build:offline`.
 
 ### Quick start
 

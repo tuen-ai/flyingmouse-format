@@ -26,6 +26,10 @@ jobs:
           node --check electron-security.js
           node --check preload.js
           node --check public/app.js
+          node --check offline/app/app.js
+          node --check offline/app/image-runtime.js
+          node --check offline/core/text-formats.js
+          node --check scripts/build-offline.js
 
       - name: Run test suite
         # conversion.test.js needs bin/ engines (ffmpeg/poppler/tessdata), which are gitignored;

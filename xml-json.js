@@ -171,4 +171,8 @@ function xmlToJson(xml) {
   return JSON.parse(JSON.stringify(parsed));
 }
 
-module.exports = { parseXmlToJson, xmlToJson };
+const api = { parseXmlToJson, xmlToJson };
+// 双导出：Node 走 CommonJS，浏览器（离线单文件版）挂到 globalThis，避免重复实现一份解析器。
+if (typeof module === "object" && module.exports) module.exports = api;
+if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
+

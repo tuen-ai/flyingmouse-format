@@ -24,6 +24,10 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `pe-metadata.js` / `scripts/inspect-pe.js`：读取 PE32/PE32+ 的目标 OS 版本，发布时检查解包应用 EXE。
 - `build/icon.png`：NSIS、EXE、任务栏和快捷方式的 512×512 鼠鼠图标；必须由 `public/assets/mouse-format/mouse-idle.png` 生成。
 - `bin/`：本地转换引擎。除 `bin/avs3/` 外被 Git 忽略，换机时必须单独准备。
+- `offline/`：离线单文件网页版（免安装、免联网、无服务端）。`offline/core/*.js` 是 Node 与浏览器双用的纯逻辑，
+  `offline/app/*.js` 是浏览器侧文案 / Canvas 图片管线 / 控制器，`offline/dist/flyingmouse-format-offline.html` 是构建产物（必须提交）。
+- `scripts/build-offline.js`：把 `offline/` 内联成单文件；`--check` 校验产物与源码一致（测试会按字节比对）。
+- `scripts/png-mini.js`：只用 `node:zlib` 的 PNG 解码 / 缩放 / 重编码，用于把鼠鼠状态图缩小后内联，禁止为此引入 sharp。
 
 ## Product invariants
 
@@ -36,6 +40,11 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - 单文件和批量保存均使用 Electron 对话框；只有成功保存后才更新最近目录。
 - 目标格式按源扩展名分别记忆；用户修改后覆盖该源格式的默认目标。
 - 首次语言跟随系统；手动选择 `zh-CN` 或 `en-US` 后使用 `flyingmouse.language.v1` 持久化。
+- 离线单文件版同样受上述红线约束：必须有 `#mouseMascot` 与鼠鼠状态图、禁止动态 `innerHTML`、中英文键集合一致、
+  保留非商用声明；页面禁止任何外部请求（构建产物内联全部样式 / 脚本 / 图片，并带 `default-src 'none'` 的 CSP）。
+- 离线版只做浏览器内能完成的转换（图片、文本、表格、EPUB、DOCX、ZIP）；音视频、Office、PDF 解析、OCR 必须留在桌面版，
+  文案里不得暗示离线版能替代桌面版。
+- 改了 `offline/` 任何文件后必须重跑 `npm run build:offline` 并提交产物，否则 `tests/offline-build.test.js` 会失败。
 
 ## Conversion boundaries
 
@@ -76,6 +85,7 @@ Electron 启动时设置：
 ```powershell
 npm install
 npm run desktop
+npm run build:offline
 npm test
 npm run test:ci
 npm audit --omit=dev
@@ -111,6 +121,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - `docs/ARCHITECTURE.md`：运行架构、状态和数据边界。
 - `docs/RELEASE.md`：本机测试、打包、桌面同步与 GitHub 发布清单。
 - `docs/HANDOFF.md`：当前可交接状态和剩余风险。
+- `docs/离线单文件工具.md`：离线单文件网页版的能力范围、构建方式、与桌面版共用的约定和限制。
 - `docs/privacy-policy.html`：面向用户和 Microsoft Store 的隐私政策。
 - `docs/微软商店上架清单.md`、`docs/上架材料包.md`：商店渠道资料；外部审核状态必须写绝对日期并注明是否已现场复核。
 
