@@ -2015,6 +2015,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   const RAW_TEXT_TAGS = new Set(["script", "style"]);
   const BLOCK_TAGS = new Set(["p", "div", "section", "article", "header", "footer", "main", "aside", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "hr"]);
   const NAMED_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  // 嵌套深度上限：畸形/恶意 HTML（几万层嵌套）会让后续递归序列化爆栈，超过这个深度就压平
+  const MAX_HTML_DEPTH = 256;
 
   function decodeHtmlEntities(text) {
     return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, body) => {
@@ -2119,7 +2121,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         index += match ? match.index + match[0].length : rest.length;
         continue;
       }
-      if (!VOID_TAGS.has(tag) && !openMatch[3]) stack.push(node);
+      if (!VOID_TAGS.has(tag) && !openMatch[3] && stack.length < MAX_HTML_DEPTH) stack.push(node);
     }
     return root;
   }
@@ -3991,6 +3993,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       body.append(createTextElement("p", "queue-meta", t("queue.meta", { category: categoryLabel(item.category), size: formatBytes(item.size) })));
       body.append(createTextElement("p", "queue-status", statusLabel(item)));
 
+      // 转换过程中禁止改队列：转换循环按索引推进，排序/移除会让结果错位
       const actions = createTextElement("div", "queue-actions");
       if (state.items.length > 1) {
         const up = createTextElement("button", "mini-button", "↑");
@@ -3998,19 +4001,20 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
         up.dataset.move = String(index);
         up.dataset.direction = "up";
         up.title = t("action.moveUp");
-        up.disabled = index === 0;
+        up.disabled = state.converting || index === 0;
         const down = createTextElement("button", "mini-button", "↓");
         down.type = "button";
         down.dataset.move = String(index);
         down.dataset.direction = "down";
         down.title = t("action.moveDown");
-        down.disabled = index === state.items.length - 1;
+        down.disabled = state.converting || index === state.items.length - 1;
         actions.append(up, down);
       }
       const remove = createTextElement("button", "mini-button", "✕");
       remove.type = "button";
       remove.dataset.remove = String(index);
       remove.title = t("action.remove");
+      remove.disabled = state.converting;
       actions.append(remove);
 
       li.append(glyph, body, actions);
@@ -4137,6 +4141,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   }
 
   function addFiles(fileList) {
+    if (state.converting) return;
     const files = Array.from(fileList || []).filter((file) => file && file.size >= 0);
     if (files.length === 0) return;
     let rejected = 0;
@@ -4166,6 +4171,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   }
 
   function clearQueue() {
+    if (state.converting) return;
     if (mascotTimer) {
       clearTimeout(mascotTimer);
       mascotTimer = 0;
@@ -4287,6 +4293,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     state.extraResults = [];
     elements.convertButton.disabled = true;
     elements.convertButton.textContent = t("action.converting");
+    elements.clearButton.disabled = true;
+    elements.addMoreButton.disabled = true;
     setMouseState(state.items.length > 1 ? "batch" : "converting");
 
     const target = state.target;
@@ -4341,6 +4349,8 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       }
     } finally {
       state.converting = false;
+      elements.clearButton.disabled = false;
+      elements.addMoreButton.disabled = false;
       elements.convertButton.textContent = t("action.convert");
       elements.convertButton.disabled = state.items.length === 0 || !state.target;
     }
@@ -4425,6 +4435,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   }
 
   function moveItem(index, direction) {
+    if (state.converting) return;
     const target = direction === "up" ? index - 1 : index + 1;
     if (target < 0 || target >= state.items.length) return;
     const [item] = state.items.splice(index, 1);
@@ -4433,6 +4444,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   }
 
   function removeItem(index) {
+    if (state.converting) return;
     state.items.splice(index, 1);
     renderQueue();
     renderTargets();

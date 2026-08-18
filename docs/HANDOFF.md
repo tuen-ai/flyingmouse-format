@@ -1,6 +1,6 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-15（v0.6.1 全平台发布完成——Windows 10/11 x64 + Windows 7 兼容版 + macOS arm64/x64 DMG）
+更新时间：2026-08-18（新增离线单文件网页版；v0.6.1 全平台发布状态不变）
 
 ## 当前状态
 
@@ -17,6 +17,17 @@
 - PDF 引擎（docengine.exe md5 1d2d12e6）：页眉/页脚擦除（含罗马页码）、标题独立成段、封面标签/值分行、目录/文献独立、表单检测收紧（FORM_ROW_X_GAP=40/FORM_SHORT_MAX=20/图注排除）、RawPage 离群检测加同行伙伴检查（修 1101 缺「二维码」）
 - ICO 增强：PNG→ICO 尺寸自适应（小源图不再上采样模糊）+ extractAllFrames 多帧提取
 - CI 全平台打通过程修复（11 轮）：manifest repository OWNER、docstructure lock 重建、bin/avs3 入库兼容、probe 退出码 20 + stderr 捕获（bash + set +e）、mac /var 符号链接（trustedRoot/isTrustedEntry realpath 自洽）、测试硬编码本机路径、8.3 短名（realpathSync.native）、ZIP 时间戳确定性
+
+## 离线单文件网页版（2026-08-18 新增，分支 claude/offline-html-tool-ui-redesign-vloqqv）
+
+- 交付物：`offline/dist/flyingmouse-format-offline.html`（约 450KB，单文件，已入库；`.gitignore` 对 `dist/` 做了例外）。
+  免安装、免联网、无服务端；能力＝图片互转 / 图片合并 PDF / 文本表格互转 / EPUB / DOCX / 打包 ZIP。
+- UI 重做但保留鼠鼠品牌（`#mouseMascot` + 状态图 + 珊瑚红 #e95f6d + 墨线硬阴影），新增深浅双主题。
+- 构建：`npm run build:offline`（改 `offline/` 后必须重跑并提交产物）；`node scripts/build-offline.js --check` 校验一致性。
+- 测试：`tests/offline-core.test.js` / `offline-build.test.js` / `offline-ui-static.test.js` 共 31 项，已加入 `npm test` 与 `npm run test:ci`，全部零依赖（不需要 bin/ 引擎、不需要网络）。
+- 已验证：真实 Chromium 以 file:// 打开跑通全部转换路径、错误路径、队列排序、格式记忆、语言/主题持久化，控制台零报错、零外部请求；
+  产物用桌面版 `ico-format.js` / `bmp-input.js` 交叉校验通过。
+- 未验证：真实 Windows / macOS 桌面浏览器人工验收；Firefox / Safari（本机装不了，二者没有 `showSaveFilePicker`，会回退普通下载）。
 
 ## 待办（下一窗口）
 

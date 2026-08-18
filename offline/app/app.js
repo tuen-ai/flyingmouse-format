@@ -144,6 +144,7 @@
       body.append(createTextElement("p", "queue-meta", t("queue.meta", { category: categoryLabel(item.category), size: formatBytes(item.size) })));
       body.append(createTextElement("p", "queue-status", statusLabel(item)));
 
+      // 转换过程中禁止改队列：转换循环按索引推进，排序/移除会让结果错位
       const actions = createTextElement("div", "queue-actions");
       if (state.items.length > 1) {
         const up = createTextElement("button", "mini-button", "↑");
@@ -151,19 +152,20 @@
         up.dataset.move = String(index);
         up.dataset.direction = "up";
         up.title = t("action.moveUp");
-        up.disabled = index === 0;
+        up.disabled = state.converting || index === 0;
         const down = createTextElement("button", "mini-button", "↓");
         down.type = "button";
         down.dataset.move = String(index);
         down.dataset.direction = "down";
         down.title = t("action.moveDown");
-        down.disabled = index === state.items.length - 1;
+        down.disabled = state.converting || index === state.items.length - 1;
         actions.append(up, down);
       }
       const remove = createTextElement("button", "mini-button", "✕");
       remove.type = "button";
       remove.dataset.remove = String(index);
       remove.title = t("action.remove");
+      remove.disabled = state.converting;
       actions.append(remove);
 
       li.append(glyph, body, actions);
@@ -290,6 +292,7 @@
   }
 
   function addFiles(fileList) {
+    if (state.converting) return;
     const files = Array.from(fileList || []).filter((file) => file && file.size >= 0);
     if (files.length === 0) return;
     let rejected = 0;
@@ -319,6 +322,7 @@
   }
 
   function clearQueue() {
+    if (state.converting) return;
     if (mascotTimer) {
       clearTimeout(mascotTimer);
       mascotTimer = 0;
@@ -440,6 +444,8 @@
     state.extraResults = [];
     elements.convertButton.disabled = true;
     elements.convertButton.textContent = t("action.converting");
+    elements.clearButton.disabled = true;
+    elements.addMoreButton.disabled = true;
     setMouseState(state.items.length > 1 ? "batch" : "converting");
 
     const target = state.target;
@@ -494,6 +500,8 @@
       }
     } finally {
       state.converting = false;
+      elements.clearButton.disabled = false;
+      elements.addMoreButton.disabled = false;
       elements.convertButton.textContent = t("action.convert");
       elements.convertButton.disabled = state.items.length === 0 || !state.target;
     }
@@ -578,6 +586,7 @@
   }
 
   function moveItem(index, direction) {
+    if (state.converting) return;
     const target = direction === "up" ? index - 1 : index + 1;
     if (target < 0 || target >= state.items.length) return;
     const [item] = state.items.splice(index, 1);
@@ -586,6 +595,7 @@
   }
 
   function removeItem(index) {
+    if (state.converting) return;
     state.items.splice(index, 1);
     renderQueue();
     renderTargets();

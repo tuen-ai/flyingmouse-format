@@ -93,6 +93,22 @@ PDF.js 先读取电子文字及坐标，Poppler 以固定 DPI 渲染页面；无
 
 Windows 7 构建是兼容 profile，不改变标准版运行时。PE 元数据由 `pe-metadata.js` / `scripts/inspect-pe.js` 检查；兼容性判断必须读取 `win-unpacked/FlyingMouse Format.exe` 这一内层应用，而不是 OS 字段不同的 NSIS 外壳。
 
+## 离线单文件网页版（offline/）
+
+```text
+offline/index.html + styles.css + core/*.js + app/*.js
+        ↓  node scripts/build-offline.js（内联样式/脚本，鼠鼠图经 scripts/png-mini.js 缩放后转 data URI）
+offline/dist/flyingmouse-format-offline.html（单文件，约 450KB，可提交、可分发）
+        ↓  浏览器打开（file://）
+File/Blob → Canvas 或纯 JS 转换器 → Blob → 下载 / 另存为（showSaveFilePicker 可用时）
+```
+
+- 没有 Electron、没有服务端、没有本地引擎：只做浏览器自身能完成的转换（图片、文本、表格、EPUB、DOCX、ZIP）。
+- `offline/core/*.js` 是 Node 与浏览器双用的 UMD 风格模块，测试直接 `require`；`offline/app/*.js` 只在浏览器里跑。
+- 复用桌面版的 `public/i18n.js`、`public/conversion-preferences.js` 与 `xml-json.js`，语言/目标格式记忆的存储键与桌面版一致。
+- 构建可复现（ZIP 固定时间戳、不写构建时间），`tests/offline-build.test.js` 按字节校验已提交产物；
+  产物带 `default-src 'none'` 的 CSP，运行时不发起任何网络请求。
+
 ## 产品边界
 
 本仓库是“鼠鼠 UI 的飞鼠格式”。`鼠鼠打印` 是独立项目，不共享发布产物、桌面快捷方式或功能改动。

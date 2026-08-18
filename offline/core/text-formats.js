@@ -267,6 +267,8 @@
   const RAW_TEXT_TAGS = new Set(["script", "style"]);
   const BLOCK_TAGS = new Set(["p", "div", "section", "article", "header", "footer", "main", "aside", "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote", "hr"]);
   const NAMED_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+  // 嵌套深度上限：畸形/恶意 HTML（几万层嵌套）会让后续递归序列化爆栈，超过这个深度就压平
+  const MAX_HTML_DEPTH = 256;
 
   function decodeHtmlEntities(text) {
     return String(text).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, body) => {
@@ -371,7 +373,7 @@
         index += match ? match.index + match[0].length : rest.length;
         continue;
       }
-      if (!VOID_TAGS.has(tag) && !openMatch[3]) stack.push(node);
+      if (!VOID_TAGS.has(tag) && !openMatch[3] && stack.length < MAX_HTML_DEPTH) stack.push(node);
     }
     return root;
   }
