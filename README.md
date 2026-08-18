@@ -47,6 +47,8 @@
 
 ### 免安装：离线单文件网页版
 
+![离线单文件网页版界面](public/assets/screenshots/offline-home.png)
+
 装不了桌面版（公司电脑、Mac、临时用一次）时，用离线单文件版：
 
 1. 取仓库里的 `offline/dist/flyingmouse-format-offline.html`（约 450 KB，一个文件就是全部）。
