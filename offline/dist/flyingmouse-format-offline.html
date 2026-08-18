@@ -4189,8 +4189,18 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     showToast(t("toast.cleared"));
   }
 
-  function readFileAsText(file) {
-    return file.text();
+  // 中文 Windows 里 Excel 导出的 CSV / TXT 常见 GBK 编码：UTF-8 解出替换字符时回退 GBK
+  async function readFileAsText(file) {
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const utf8 = new TextDecoder("utf-8").decode(buffer);
+    if (!utf8.includes("\uFFFD")) return utf8;
+    try {
+      const gbk = new TextDecoder("gbk").decode(buffer);
+      if (!gbk.includes("\uFFFD")) return gbk;
+    } catch (error) {
+      // 浏览器不支持 gbk 时保持 UTF-8 结果
+    }
+    return utf8;
   }
 
   function textOptions() {
