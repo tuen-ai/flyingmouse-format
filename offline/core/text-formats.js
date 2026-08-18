@@ -120,11 +120,12 @@
     if (records.length === 0) return [];
     const headers = buildHeaders(records[0]);
     return records.slice(1).map((record) => {
-      const row = {};
+      const row = Object.create(null);
       headers.forEach((header, index) => {
         row[header] = record[index] == null ? "" : record[index];
       });
-      return row;
+      // 与 xml-json.js 一样用 JSON 往返抹平 null 原型，避免下游 deepStrictEqual / 序列化出现差异
+      return JSON.parse(JSON.stringify(row));
     });
   }
 
@@ -199,6 +200,7 @@
     return JSON.stringify(value === undefined ? null : value);
   }
 
+  // target 用 null 原型：源 JSON 里的 "__proto__" 字段用普通对象会触发原型 setter，整列被悄悄丢掉
   function flattenRow(row, prefix, target) {
     const keys = Object.keys(row).sort();
     for (const key of keys) {
@@ -242,8 +244,10 @@
     }
     const rows = Array.isArray(data) ? data : [data];
     const flattened = rows.map((row) => {
-      if (row && typeof row === "object" && !Array.isArray(row)) return flattenRow(row, "", {});
-      return { value: Array.isArray(row) ? stableJsonStringify(row) : row };
+      if (row && typeof row === "object" && !Array.isArray(row)) return flattenRow(row, "", Object.create(null));
+      const fallback = Object.create(null);
+      fallback.value = Array.isArray(row) ? stableJsonStringify(row) : row;
+      return fallback;
     });
     const headers = [...new Set(flattened.flatMap((row) => Object.keys(row)))].sort();
     const lines = [headers.map(quoteCsvField).join(",")];

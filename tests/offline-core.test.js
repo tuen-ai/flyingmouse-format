@@ -60,6 +60,7 @@ test("严格 CSV：BOM、转义引号、字段内换行、列数不一致报错"
 
 test("CSV 表头：空表头补位、重复与危险表头拒绝", () => {
   assert.deepEqual(textFormats.csvToJsonObjects("name,age\nAlice,30"), [{ name: "Alice", age: "30" }]);
+  assert.equal(Object.getPrototypeOf(textFormats.csvToJsonObjects("a\n1")[0]), Object.prototype, "输出必须是普通对象");
   assert.deepEqual(textFormats.csvToJsonObjects("name,\nAlice,30"), [{ name: "Alice", column_2: "30" }]);
   assert.throws(() => textFormats.csvToJsonObjects("name,NAME\n1,2"), (error) => /重复/.test(error.message));
   assert.throws(() => textFormats.csvToJsonObjects("__proto__\n1"), (error) => /不安全/.test(error.message));
@@ -92,6 +93,12 @@ test("JSON -> CSV：路径扁平化、键排序、全字段加引号、路径冲
     () => textFormats.jsonToCsv(JSON.stringify([{ "a.b": 1, a: { b: 2 } }])),
     (error) => error.code === "JSON_CSV_PATH_COLLISION" && error.path === "a.b",
   );
+
+  // "__proto__" 字段：既不能污染原型，也不能整列消失
+  assert.equal(textFormats.jsonToCsv(String.raw`[{"__proto__":"abc","name":"x"}]`), '"__proto__","name"\n"abc","x"');
+  assert.equal(textFormats.jsonToCsv(String.raw`[{"__proto__":{"a":1},"name":"x"}]`), '"__proto__.a","name"\n"1","x"');
+  assert.equal({}.a, undefined);
+  assert.equal(Object.prototype.polluted, undefined);
 });
 
 test("Markdown -> HTML：ATX 标题、fenced 代码块、链接与图片白名单", () => {
