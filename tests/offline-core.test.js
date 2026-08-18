@@ -187,7 +187,8 @@ test("EPUB：mimetype 必须第一个且不压缩，目录结构与桌面版一�
   const opf = entries[2].data.toString("utf8");
   assert.match(opf, /<dc:title>测试书<\/dc:title>/);
   assert.match(opf, /urn:uuid:00000000-0000-4000-8000-000000000000/);
-  assert.match(entries[3].data.toString("utf8"), /<meta name="dtb:uid" content="bookid"\/>/);
+  // dtb:uid 写真实标识符（桌面版写死 "bookid"，epubcheck 会判为与 OPF 不一致）
+  assert.match(entries[3].data.toString("utf8"), /<meta name="dtb:uid" content="urn:uuid:00000000-0000-4000-8000-000000000000"\/>/);
 });
 
 test("EPUB 分章：md 按标题切分，纯文本按 2000 字聚合", () => {
@@ -428,4 +429,37 @@ test("Windows 设备名带扩展名也要拦下，查表不走原型链", () => 
   assert.equal(formatMap.categoryOf("constructor"), "unknown");
   assert.equal(formatMap.mimeTypeFor("constructor"), "application/octet-stream");
   assert.equal(formatMap.extensionOf("a.constructor"), "constructor");
+});
+
+test("章节数封顶后并入最后一章，而不是每段自成一章", () => {
+  // 每段就超过 2000 字，正常会切出 150 章；封顶后只能有 100 章（99 + 收尾）
+  const paragraphs = new Array(150).fill(0).map((_, index) => `第${index}段${"字".repeat(2100)}`).join("\n\n");
+  const parts = ebook.splitChapters(paragraphs, "txt");
+  assert.ok(parts.length <= 100, `章节数应封顶，实际 ${parts.length}`);
+  assert.ok(parts[parts.length - 1].body.length > 2100 * 40, "多出来的段落应并入最后一章");
+});
+
+test("BITMAPCOREHEADER 的 BMP 用 3 字节调色板", () => {
+  // 14 字节文件头 + 12 字节 core header + 2 项调色板（3 字节）+ 1 行像素
+  const header = Buffer.alloc(14 + 12 + 6 + 4);
+  header[0] = 0x42;
+  header[1] = 0x4d;
+  header.writeUInt32LE(header.length, 2);
+  header.writeUInt32LE(14 + 12 + 6, 10);
+  header.writeUInt32LE(12, 14);
+  header.writeUInt16LE(2, 18);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt16LE(1, 24);
+  header[26] = 0x10;
+  header[27] = 0x20;
+  header[28] = 0x30;
+  header[29] = 0x40;
+  header[30] = 0x50;
+  header[31] = 0x60;
+  header[32] = 0b01000000;
+  const decoded = imageCodecs.decodeBmp(new Uint8Array(header));
+  assert.equal(decoded.width, 2);
+  assert.equal(decoded.height, 1);
+  assert.deepEqual(Array.from(decoded.data.subarray(0, 8)), [0x30, 0x20, 0x10, 255, 0x60, 0x50, 0x40, 255]);
 });

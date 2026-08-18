@@ -72,6 +72,8 @@ function decodePng(buffer) {
   const out = Buffer.alloc(ihdr.width * ihdr.height * 4);
   const line = Buffer.alloc(stride);
   const prev = Buffer.alloc(stride);
+  const expected = (stride + 1) * ihdr.height;
+  if (raw.length < expected) throw new Error(`PNG 像素数据不完整：期望 ${expected} 字节，实际 ${raw.length}`);
   let pos = 0;
   for (let y = 0; y < ihdr.height; y += 1) {
     const filter = raw[pos];

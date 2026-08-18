@@ -32,11 +32,12 @@
   // 解码 BMP -> { width, height, data(RGBA) }
   function decodeBmp(bytes) {
     if (!isBmpBytes(bytes)) throw new Error("不是有效的 BMP 文件。");
-    if (bytes.length < 54) throw new Error("BMP 文件头不完整。");
+    if (bytes.length < 26) throw new Error("BMP 文件头不完整。");
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const pixelOffset = view.getUint32(10, true);
     const dibSize = view.getUint32(14, true);
     const isCore = dibSize === 12;
+    if (!isCore && bytes.length < 54) throw new Error("BMP 文件头不完整。");
     const width = isCore ? view.getUint16(18, true) : view.getInt32(18, true);
     const heightRaw = isCore ? view.getUint16(22, true) : view.getInt32(22, true);
     const bitCount = isCore ? view.getUint16(24, true) : view.getUint16(28, true);
@@ -64,9 +65,11 @@
       const maxEntries = bitCount === 1 ? 2 : bitCount === 4 ? 16 : 256;
       const entries = declaredColors > 0 ? Math.min(declaredColors, maxEntries) : maxEntries;
       const start = 14 + dibSize;
+      // BITMAPCOREHEADER 的调色板是 RGBTRIPLE（3 字节），其余是 RGBQUAD（4 字节）
+      const entrySize = isCore ? 3 : 4;
       palette = [];
       for (let i = 0; i < entries; i += 1) {
-        const base = start + i * 4;
+        const base = start + i * entrySize;
         palette.push([bytes[base + 2] || 0, bytes[base + 1] || 0, bytes[base] || 0]);
       }
     }

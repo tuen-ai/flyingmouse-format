@@ -2736,11 +2736,12 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
   // 解码 BMP -> { width, height, data(RGBA) }
   function decodeBmp(bytes) {
     if (!isBmpBytes(bytes)) throw new Error("不是有效的 BMP 文件。");
-    if (bytes.length < 54) throw new Error("BMP 文件头不完整。");
+    if (bytes.length < 26) throw new Error("BMP 文件头不完整。");
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const pixelOffset = view.getUint32(10, true);
     const dibSize = view.getUint32(14, true);
     const isCore = dibSize === 12;
+    if (!isCore && bytes.length < 54) throw new Error("BMP 文件头不完整。");
     const width = isCore ? view.getUint16(18, true) : view.getInt32(18, true);
     const heightRaw = isCore ? view.getUint16(22, true) : view.getInt32(22, true);
     const bitCount = isCore ? view.getUint16(24, true) : view.getUint16(28, true);
@@ -2768,9 +2769,11 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       const maxEntries = bitCount === 1 ? 2 : bitCount === 4 ? 16 : 256;
       const entries = declaredColors > 0 ? Math.min(declaredColors, maxEntries) : maxEntries;
       const start = 14 + dibSize;
+      // BITMAPCOREHEADER 的调色板是 RGBTRIPLE（3 字节），其余是 RGBQUAD（4 字节）
+      const entrySize = isCore ? 3 : 4;
       palette = [];
       for (let i = 0; i < entries; i += 1) {
-        const base = start + i * 4;
+        const base = start + i * entrySize;
         palette.push([bytes[base + 2] || 0, bytes[base + 1] || 0, bytes[base] || 0]);
       }
     }
@@ -2954,7 +2957,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
     let buffer = "";
     for (const paragraph of paragraphs) {
       buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
-      if (buffer.length > 2000 || parts.length >= 99) {
+      if (buffer.length > 2000 && parts.length < 99) {
         parts.push({ title: `第 ${parts.length + 1} 节`, body: buffer });
         buffer = "";
       }
@@ -3079,7 +3082,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       + `</package>`;
   }
 
-  function tocNcx(title, chapters) {
+  function tocNcx(title, chapters, uuid) {
     const navPoints = chapters
       .map((chapter, index) => `    <navPoint id="nav-${index + 1}" playOrder="${index + 1}">`
         + `<navLabel><text>${escapeXml(chapter.title)}</text></navLabel>`
@@ -3087,7 +3090,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       .join("\n");
     return `<?xml version="1.0" encoding="UTF-8"?>\n`
       + `<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n`
-      + `  <head><meta name="dtb:uid" content="bookid"/></head>\n`
+      + `  <head><meta name="dtb:uid" content="urn:uuid:${uuid}"/></head>\n`
       + `  <docTitle><text>${escapeXml(title)}</text></docTitle>\n`
       + `  <navMap>\n${navPoints}\n  </navMap>\n`
       + `</ncx>`;
@@ -3119,7 +3122,7 @@ if (typeof globalThis !== "undefined") globalThis.FlyingMouseXmlJson = api;
       { name: "mimetype", data: "application/epub+zip", store: true },
       { name: "META-INF/container.xml", data: CONTAINER_XML },
       { name: "OEBPS/content.opf", data: contentOpf(title, chapters, uuid) },
-      { name: "OEBPS/toc.ncx", data: tocNcx(title, chapters) },
+      { name: "OEBPS/toc.ncx", data: tocNcx(title, chapters, uuid) },
     ];
     for (const chapter of chapters) {
       const bodyHtml = source === "md" || source === "markdown" ? markdownToXhtml(chapter.body) : plainToXhtml(chapter.body);

@@ -68,7 +68,7 @@
     let buffer = "";
     for (const paragraph of paragraphs) {
       buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
-      if (buffer.length > 2000 || parts.length >= 99) {
+      if (buffer.length > 2000 && parts.length < 99) {
         parts.push({ title: `第 ${parts.length + 1} 节`, body: buffer });
         buffer = "";
       }
@@ -193,7 +193,7 @@
       + `</package>`;
   }
 
-  function tocNcx(title, chapters) {
+  function tocNcx(title, chapters, uuid) {
     const navPoints = chapters
       .map((chapter, index) => `    <navPoint id="nav-${index + 1}" playOrder="${index + 1}">`
         + `<navLabel><text>${escapeXml(chapter.title)}</text></navLabel>`
@@ -201,7 +201,7 @@
       .join("\n");
     return `<?xml version="1.0" encoding="UTF-8"?>\n`
       + `<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n`
-      + `  <head><meta name="dtb:uid" content="bookid"/></head>\n`
+      + `  <head><meta name="dtb:uid" content="urn:uuid:${uuid}"/></head>\n`
       + `  <docTitle><text>${escapeXml(title)}</text></docTitle>\n`
       + `  <navMap>\n${navPoints}\n  </navMap>\n`
       + `</ncx>`;
@@ -233,7 +233,7 @@
       { name: "mimetype", data: "application/epub+zip", store: true },
       { name: "META-INF/container.xml", data: CONTAINER_XML },
       { name: "OEBPS/content.opf", data: contentOpf(title, chapters, uuid) },
-      { name: "OEBPS/toc.ncx", data: tocNcx(title, chapters) },
+      { name: "OEBPS/toc.ncx", data: tocNcx(title, chapters, uuid) },
     ];
     for (const chapter of chapters) {
       const bodyHtml = source === "md" || source === "markdown" ? markdownToXhtml(chapter.body) : plainToXhtml(chapter.body);
