@@ -55,8 +55,8 @@ test("产物用严格 CSP：不含 'self'，源码页则允许 'self' 以便直�
 
 test("产物保留品牌与非商用声明", () => {
   const html = build();
-  assert.match(html, /禁止商业售卖/);
-  assert.match(html, /FlyingMouse Format/);
+  assert.match(html, /禁止商業售賣/);
+  assert.match(html, /FormatDeck/);
 });
 
 test("PNG 工具：解码 -> 缩放 -> 重编码后仍是合法 PNG 且尺寸正确", () => {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- 源码页允许 'self'（直接打开 offline/index.html 调试用）；构建时会换成不含 'self' 的严格策略 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src blob:; form-action 'none'; base-uri 'none'">
-    <title>FlyingMouse Format Offline · 飞鼠格式离线版</title>
+    <title>轉檔台 FormatDeck · 離線單檔工具</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
@@ -58,7 +58,7 @@
       </defs>
     </svg>
 
-    <a class="skip-link" href="#dropZone" data-i18n="a11y.skip">跳到上传区</a>
+    <a class="skip-link" href="#dropZone" data-i18n="a11y.skip">跳到上傳區</a>
 
     <div class="deck">
       <header class="deck-top">
@@ -68,22 +68,22 @@
           </span>
           <div class="brand-text">
             <p class="brand-eyebrow">
-              FlyingMouse Format
-              <span class="chip chip-offline" data-i18n="brand.offlineBadge">离线单文件</span>
+              FormatDeck
+              <span class="chip chip-offline" data-i18n="brand.offlineBadge">離線單檔</span>
             </p>
-            <h1 class="brand-title" data-i18n="brand.title">离线格式转换台</h1>
-            <p class="brand-sub" data-i18n="brand.subtitle">全部转换在你的浏览器里完成，文件不会离开这台电脑。</p>
+            <h1 class="brand-title" data-i18n="brand.title">離線轉檔台</h1>
+            <p class="brand-sub" data-i18n="brand.subtitle">所有轉換都在你的瀏覽器裡完成，檔案不會離開這台電腦。</p>
           </div>
         </div>
         <div class="deck-actions">
-          <button class="icon-button" id="themeToggle" type="button" aria-pressed="false" data-i18n-aria="theme.aria" aria-label="切换深色模式">
+          <button class="icon-button" id="themeToggle" type="button" aria-pressed="false" data-i18n-aria="theme.aria" aria-label="切換主題">
             <span class="icon-button-glyph" aria-hidden="true">◐</span>
-            <span class="icon-button-label" id="themeToggleLabel" data-i18n="theme.auto">跟随系统</span>
+            <span class="icon-button-label" id="themeToggleLabel" data-i18n="theme.auto">跟隨系統</span>
           </button>
           <label class="select-field">
-            <span class="select-label" data-i18n="language.label">语言</span>
-            <select id="languageSelect" aria-label="语言 / Language">
-              <option value="zh-CN">中文</option>
+            <span class="select-label" data-i18n="language.label">語言</span>
+            <select id="languageSelect" aria-label="語言 / Language">
+              <option value="zh-CN">繁體中文</option>
               <option value="en-US">English</option>
             </select>
           </label>
@@ -91,63 +91,63 @@
       </header>
 
       <main class="deck-main">
-        <section class="card stage-card" data-i18n-aria="upload.aria" aria-label="上传文件">
+        <section class="card stage-card" data-i18n-aria="upload.aria" aria-label="上傳檔案">
           <div class="stage-inner">
             <button class="dropzone" id="dropZone" type="button">
               <span class="stage-art" id="stageArt" data-state="upload" aria-hidden="true">
                 <svg class="stage-glyph" viewBox="0 0 64 64"><use id="stageGlyph" href="#glyph-upload"></use></svg>
               </span>
               <span class="dropzone-text">
-                <span class="dropzone-title" data-i18n="upload.title">把文件拖进来</span>
-                <span class="dropzone-hint" id="dropHint" data-i18n="upload.hint">图片、文本、Markdown、HTML、CSV、JSON、XML 都可以，支持拖拽、点击或 Ctrl+V 粘贴</span>
+                <span class="dropzone-title" data-i18n="upload.title">把檔案拖進來</span>
+                <span class="dropzone-hint" id="dropHint" data-i18n="upload.hint">圖片、文字、Markdown、HTML、CSV、JSON、XML 都可以，支援拖曳、點擊或 Ctrl+V 貼上</span>
               </span>
             </button>
             <input id="fileInput" class="sr-only" type="file" multiple>
             <ul class="promise-list">
-              <li class="promise" data-i18n="promise.local">100% 本机运行</li>
-              <li class="promise" data-i18n="promise.noUpload">不上传、不联网</li>
-              <li class="promise" data-i18n="promise.singleFile">一个 HTML 文件即可使用</li>
+              <li class="promise" data-i18n="promise.local">100% 本機執行</li>
+              <li class="promise" data-i18n="promise.noUpload">不上傳、不連網</li>
+              <li class="promise" data-i18n="promise.singleFile">一個 HTML 檔即可使用</li>
             </ul>
           </div>
         </section>
 
         <section class="workbench" id="workbench" hidden>
-          <section class="card queue-card" data-i18n-aria="queue.aria" aria-label="转换队列">
+          <section class="card queue-card" data-i18n-aria="queue.aria" aria-label="轉換佇列">
             <header class="card-head">
-              <h2 class="card-title" data-i18n="queue.title">队列</h2>
+              <h2 class="card-title" data-i18n="queue.title">佇列</h2>
               <span class="counter" id="queueCounter">0</span>
               <div class="card-head-actions">
-                <button class="ghost-button" id="addMoreButton" type="button" data-i18n="action.addMore">继续添加</button>
+                <button class="ghost-button" id="addMoreButton" type="button" data-i18n="action.addMore">繼續加入</button>
                 <button class="ghost-button danger" id="clearButton" type="button" data-i18n="action.clear">清空</button>
               </div>
             </header>
             <ul class="queue-list" id="queueList"></ul>
-            <p class="queue-empty" id="queueEmpty" data-i18n="queue.empty">队列是空的，先拖几个文件进来。</p>
+            <p class="queue-empty" id="queueEmpty" data-i18n="queue.empty">佇列是空的，先拖幾個檔案進來。</p>
           </section>
 
-          <aside class="card console-card" data-i18n-aria="console.aria" aria-label="转换设置">
+          <aside class="card console-card" data-i18n-aria="console.aria" aria-label="轉換設定">
             <header class="card-head">
-              <h2 class="card-title" data-i18n="console.title">转换设置</h2>
+              <h2 class="card-title" data-i18n="console.title">轉換設定</h2>
             </header>
 
             <div class="field-block">
               <p class="field-label" id="targetLabel" data-i18n="target.label">目标格式</p>
               <div class="chip-grid" id="targetGroup" role="radiogroup" aria-labelledby="targetLabel"></div>
-              <p class="field-note" id="targetNote" data-i18n="target.empty">先选择文件，再挑目标格式。</p>
+              <p class="field-note" id="targetNote" data-i18n="target.empty">先選檔案，再挑目標格式。</p>
             </div>
 
             <div class="field-block" id="imageOptions" hidden>
               <label class="field">
-                <span class="field-label" data-i18n="option.quality">图片质量</span>
+                <span class="field-label" data-i18n="option.quality">圖片品質</span>
                 <input id="imageQuality" type="range" min="40" max="100" step="1" value="88">
                 <output class="field-value" id="imageQualityValue">88</output>
               </label>
               <label class="field">
-                <span class="field-label" data-i18n="option.maxWidth">最大边长（像素，0 = 保持原尺寸）</span>
+                <span class="field-label" data-i18n="option.maxWidth">最長邊（像素，0 = 保持原尺寸）</span>
                 <input id="imageMaxSize" type="number" min="0" max="16384" step="1" value="0" inputmode="numeric">
               </label>
               <label class="field" id="alphaBackgroundField">
-                <span class="field-label" data-i18n="option.alphaBackground">透明背景填充</span>
+                <span class="field-label" data-i18n="option.alphaBackground">透明背景填色</span>
                 <select id="alphaBackground">
                   <option value="white" data-i18n="option.alphaWhite">白色</option>
                   <option value="black" data-i18n="option.alphaBlack">黑色</option>
@@ -157,55 +157,55 @@
 
             <div class="field-block" id="pdfOptions" hidden>
               <label class="field">
-                <span class="field-label" data-i18n="option.paper">页面尺寸</span>
+                <span class="field-label" data-i18n="option.paper">頁面尺寸</span>
                 <select id="pdfPaper">
-                  <option value="auto" data-i18n="option.paperAuto">跟随图片</option>
+                  <option value="auto" data-i18n="option.paperAuto">跟隨圖片</option>
                   <option value="a4">A4</option>
                   <option value="letter" data-i18n="option.paperLetter">Letter</option>
                 </select>
               </label>
               <label class="field">
-                <span class="field-label" data-i18n="option.margin">页边距（pt）</span>
+                <span class="field-label" data-i18n="option.margin">頁邊距（pt）</span>
                 <input id="pdfMargin" type="number" min="0" max="144" step="1" value="24" inputmode="numeric">
               </label>
               <label class="switch">
                 <input id="pdfMerge" type="checkbox" checked>
-                <span data-i18n="option.mergePdf">多张图片合并成一个 PDF（按队列顺序）</span>
+                <span data-i18n="option.mergePdf">多張圖片合併成一個 PDF（依佇列順序）</span>
               </label>
             </div>
 
             <div class="field-block" id="textOptions" hidden>
               <label class="field">
-                <span class="field-label" data-i18n="option.delimiter">CSV 分隔符（读取和写出都用它）</span>
+                <span class="field-label" data-i18n="option.delimiter">CSV 分隔符號（讀取與寫出都用它）</span>
                 <select id="csvDelimiter">
-                  <option value="," data-i18n="option.delimiterComma">逗号 ,</option>
-                  <option value=";" data-i18n="option.delimiterSemicolon">分号 ;</option>
-                  <option value="\t" data-i18n="option.delimiterTab">制表符 Tab</option>
+                  <option value="," data-i18n="option.delimiterComma">逗號 ,</option>
+                  <option value=";" data-i18n="option.delimiterSemicolon">分號 ;</option>
+                  <option value="\t" data-i18n="option.delimiterTab">定位字元 Tab</option>
                 </select>
               </label>
               <label class="switch">
                 <input id="csvBom" type="checkbox" checked>
-                <span data-i18n="option.bom">CSV 写入 UTF-8 BOM（Excel 打开不乱码）</span>
+                <span data-i18n="option.bom">CSV 寫入 UTF-8 BOM（Excel 開啟不亂碼）</span>
               </label>
               <label class="field" id="ebookTitleField">
-                <span class="field-label" data-i18n="option.bookTitle">电子书标题（留空用文件名）</span>
+                <span class="field-label" data-i18n="option.bookTitle">電子書標題（留空用檔名）</span>
                 <input id="ebookTitle" type="text" maxlength="120" autocomplete="off">
               </label>
             </div>
 
             <div class="console-actions">
-              <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
-              <p class="status-line" id="statusLine" role="status" aria-live="polite" data-i18n="status.idle">等待文件</p>
+              <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">開始轉換</button>
+              <p class="status-line" id="statusLine" role="status" aria-live="polite" data-i18n="status.idle">等待檔案</p>
             </div>
           </aside>
         </section>
 
-        <section class="card results-card" id="resultsCard" hidden data-i18n-aria="results.aria" aria-label="转换结果">
+        <section class="card results-card" id="resultsCard" hidden data-i18n-aria="results.aria" aria-label="轉換結果">
           <header class="card-head">
-            <h2 class="card-title" data-i18n="results.title">结果</h2>
+            <h2 class="card-title" data-i18n="results.title">結果</h2>
             <span class="counter" id="resultsCounter">0</span>
             <div class="card-head-actions">
-              <button class="ghost-button" id="downloadAllButton" type="button" data-i18n="action.downloadAll">打包下载 ZIP</button>
+              <button class="ghost-button" id="downloadAllButton" type="button" data-i18n="action.downloadAll">打包下載 ZIP</button>
             </div>
           </header>
           <ul class="result-list" id="resultList"></ul>
@@ -213,8 +213,8 @@
       </main>
 
       <footer class="deck-foot">
-        <p class="notice" data-i18n="footer.notice">仅供个人免费使用，禁止商业售卖 / 转卖 / 套壳换皮重新发布。</p>
-        <p class="notice muted" data-i18n="footer.scope">离线版在浏览器内完成图片与文本类转换；音视频、Office、PDF 解析等需要本地引擎的能力请使用桌面版。</p>
+        <p class="notice" data-i18n="footer.notice">僅供個人免費使用，禁止商業售賣 / 轉售 / 套殼換皮重新發布。</p>
+        <p class="notice muted" data-i18n="footer.scope">離線版在瀏覽器內完成圖片與文字類轉換；音訊、影片、Office、PDF 解析等需要本機引擎的能力請用桌面版。</p>
         <p class="notice muted" id="buildLine"></p>
       </footer>
     </div>

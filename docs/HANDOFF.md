@@ -20,7 +20,7 @@
 
 ## 离线单文件网页版（2026-08-18 新增，分支 claude/offline-html-tool-ui-redesign-vloqqv）
 
-- 交付物：`offline/dist/flyingmouse-format-offline.html`（约 171KB，单文件，已入库；`.gitignore` 对 `dist/` 做了例外）。
+- 交付物：`offline/dist/formatdeck-offline.html`（约 171KB，单文件，已入库；`.gitignore` 对 `dist/` 做了例外）。
   免安装、免联网、无服务端；能力＝图片互转 / 图片合并 PDF / 文本表格互转 / EPUB / DOCX / 打包 ZIP。
 - UI 重做：用户 2026-08-19 要求去掉鼠鼠形象，界面图标改为自绘 SVG 精灵（`#glyph-*`），保留珊瑚红 #e95f6d + 墨线硬阴影与深浅双主题；桌面版鼠鼠品牌不变。
 - 构建：`npm run build:offline`（改 `offline/` 后必须重跑并提交产物）；`node scripts/build-offline.js --check` 校验一致性。

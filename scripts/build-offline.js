@@ -1,13 +1,13 @@
-// 把 offline/ 源码打包成一个自包含的离线 HTML 工具（无外部请求、无 node_modules 依赖）。
+// 把 offline/ 源码打包成「轉檔台 FormatDeck」的离线单文件（无外部请求、无 node_modules 依赖）。
 // 用法：node scripts/build-offline.js [--check]
-//   默认写入 offline/dist/flyingmouse-format-offline.html；--check 只校验产物是否与源码一致（CI/测试用）。
+//   默认写入 offline/dist/formatdeck-offline.html；--check 只校验产物是否与源码一致（CI/测试用）。
 // 构建必须可复现：同样的源码产出同样的字节（鼠鼠图片按固定参数缩放，不写时间戳）。
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const ROOT = path.join(__dirname, "..");
 const OFFLINE_DIR = path.join(ROOT, "offline");
-const OUTPUT_PATH = path.join(OFFLINE_DIR, "dist", "flyingmouse-format-offline.html");
+const OUTPUT_PATH = path.join(OFFLINE_DIR, "dist", "formatdeck-offline.html");
 
 // 界面状态：图标由页面内的 SVG 精灵提供（自绘几何图形），构建时不再内联任何位图
 const STAGE_STATES = ["idle", "upload", "analyzing", "converting", "batch", "success", "error"];

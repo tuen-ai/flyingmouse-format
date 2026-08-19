@@ -436,7 +436,7 @@
     const bytes = await zipWriter.createZipCompressed(entries);
     const name = items.length === 1
       ? formatMap.outputNameFor(items[0].name, "zip")
-      : `flyingmouse-${items.length}-files.zip`;
+      : `formatdeck-${items.length}-files.zip`;
     return makeResult(name, bytes, "zip");
   }
 
@@ -630,7 +630,7 @@
         entries.push({ name: uniqueName(result.name, used), data: new Uint8Array(await result.blob.arrayBuffer()) });
       }
       const bytes = await zipWriter.createZipCompressed(entries);
-      saveBlob("flyingmouse-offline.zip", new Blob([bytes], { type: "application/zip" }));
+      saveBlob("formatdeck-offline.zip", new Blob([bytes], { type: "application/zip" }));
     } catch (error) {
       showToast(t("error.convert", { message: error && error.message ? error.message : String(error) }), "error");
     }

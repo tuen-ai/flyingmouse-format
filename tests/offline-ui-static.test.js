@@ -20,7 +20,7 @@ test("离线版图标全部是内嵌 SVG，不引用任何位图", () => {
   assert.match(html, /class="brand-mark"/);
   assert.match(html, /id="dropZone"/);
   assert.match(html, /id="dropHint"/);
-  assert.match(html, /把文件拖进来/);
+  assert.match(html, /把檔案拖進來/);
   assert.doesNotMatch(html, /<img\s/i, "页面标记里不得出现 <img>");
   assert.doesNotMatch(html, /mouse-format/, "离线版不再使用鼠鼠位图");
   assert.doesNotMatch(appJs, /mouse-format/);
@@ -86,7 +86,7 @@ test("中英文文案键集合必须一致，且保留非商用声明", () => {
   const en = Object.keys(messages["en-US"]).sort();
   assert.deepEqual(zh, en, "zh-CN 与 en-US 的 key 必须完全一致");
   assert.ok(zh.length > 50);
-  assert.match(messages["zh-CN"]["footer.notice"], /禁止商业售卖/);
+  assert.match(messages["zh-CN"]["footer.notice"], /禁止商業售賣/);
   assert.match(messages["zh-CN"]["footer.scope"], /桌面版/);
   assert.match(messages["en-US"]["footer.notice"], /personal use only/i);
   assert.doesNotMatch(JSON.stringify(messages), /3465177342@qq\.com/);

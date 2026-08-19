@@ -25,7 +25,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `build/icon.png`：NSIS、EXE、任务栏和快捷方式的 512×512 鼠鼠图标；必须由 `public/assets/mouse-format/mouse-idle.png` 生成。
 - `bin/`：本地转换引擎。除 `bin/avs3/` 外被 Git 忽略，换机时必须单独准备。
 - `offline/`：离线单文件网页版（免安装、免联网、无服务端）。`offline/core/*.js` 是 Node 与浏览器双用的纯逻辑，
-  `offline/app/*.js` 是浏览器侧文案 / Canvas 图片管线 / 控制器，`offline/dist/flyingmouse-format-offline.html` 是构建产物（必须提交）。
+  `offline/app/*.js` 是浏览器侧文案 / Canvas 图片管线 / 控制器，`offline/dist/formatdeck-offline.html` 是构建产物（必须提交）。
 - `scripts/build-offline.js`：把 `offline/` 内联成单文件；`--check` 校验产物与源码一致（测试会按字节比对）。
 - `scripts/png-mini.js`：只用 `node:zlib` 的 PNG 解码 / 缩放 / 重编码，用于把鼠鼠状态图缩小后内联，禁止为此引入 sharp。
 
@@ -42,6 +42,8 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - 首次语言跟随系统；手动选择 `zh-CN` 或 `en-US` 后使用 `flyingmouse.language.v1` 持久化。
 - 离线单文件版按用户 2026-08-19 的决定**不使用鼠鼠形象**：界面图标是页面内自绘的 SVG 精灵（`#glyph-*` symbol），
   产物里不得出现任何位图或 `<img>`；桌面版主产品的鼠鼠品牌与状态图不受影响，不得跟着改。
+- 离线版是独立品牌「转档台 FormatDeck」，界面文字一律繁体中文，产物文件名 `offline/dist/formatdeck-offline.html`；
+  桌面版仍叫 FlyingMouse Format / 飞鼠格式，界面保持简体，appId、安装包名与商店 Identity 一律不动。
 - 离线版仍受其余红线约束：状态机覆盖上传 / 识别 / 转换 / 批量 / 成功 / 失败、禁止动态 `innerHTML`、
   中英文键集合一致、保留非商用声明；页面禁止任何外部请求（构建产物内联全部样式与脚本，并带 `default-src 'none'` 的 CSP）。
 - 离线版只做浏览器内能完成的转换（图片、文本、表格、EPUB、DOCX、ZIP）；音视频、Office、PDF 解析、OCR 必须留在桌面版，
