@@ -1,6 +1,6 @@
 // 纯 Node（仅用内置 zlib）的 PNG 解码 / 缩放 / 重编码工具。
-// 用途：把 public/assets/mouse-format/*.png（720x540 RGBA，约 195KB）缩小后内联进离线单文件 HTML。
-// 不引入 sharp：离线单文件构建必须在没有 node_modules 的环境里也能跑（npm ci 之前也能构建）。
+// 用途：在没有 sharp（未装 node_modules）的环境里缩小 PNG，例如生成 README 截图。
+// 注：离线单文件构建已不再内联位图（图标改成自绘 SVG），这个脚本只作为工具保留。
 const zlib = require('zlib');
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

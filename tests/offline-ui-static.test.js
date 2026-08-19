@@ -14,14 +14,16 @@ const appJs = readOffline("app/app.js");
 const css = readOffline("styles.css");
 const messages = require("../offline/app/messages.js");
 
-test("离线版页面保留鼠鼠品牌与上传台锚点", () => {
-  assert.match(html, /id="mouseMascot"/);
-  assert.match(html, /class="mouse-mascot"/);
-  assert.match(html, /id="brandMouse"/);
-  assert.match(html, /mouse-format\/mouse-upload\.png/);
+test("离线版图标全部是内嵌 SVG，不引用任何位图", () => {
+  assert.match(html, /id="stageArt"/);
+  assert.match(html, /id="stageGlyph"/);
+  assert.match(html, /class="brand-mark"/);
   assert.match(html, /id="dropZone"/);
   assert.match(html, /id="dropHint"/);
-  assert.match(html, /把文件丢给鼠鼠/);
+  assert.match(html, /把文件拖进来/);
+  assert.doesNotMatch(html, /<img\s/i, "页面标记里不得出现 <img>");
+  assert.doesNotMatch(html, /mouse-format/, "离线版不再使用鼠鼠位图");
+  assert.doesNotMatch(appJs, /mouse-format/);
 });
 
 test("离线版必须声明 CSP 且禁止外部资源", () => {
@@ -63,19 +65,20 @@ test("渲染层禁止动态 innerHTML，必须走 textContent", () => {
   assert.match(appJs, /replaceChildren/);
 });
 
-test("鼠鼠状态机覆盖上传/识别/转换/批量/成功/失败，且状态图存在", () => {
-  assert.match(appJs, /function setMouseState/);
-  assert.match(appJs, /mouseMascot\.dataset\.state = name/);
+test("状态机覆盖上传/识别/转换/批量/成功/失败，且每个状态都有对应图标", () => {
+  assert.match(appJs, /function setStageState/);
+  assert.match(appJs, /elements\.stageArt\.dataset\.state = state/);
   const states = ["idle", "upload", "analyzing", "converting", "batch", "success", "error"];
   for (const state of states) {
-    assert.match(appJs, new RegExp(`${state}:`), `mouseAssets 缺少状态 ${state}`);
-    const asset = path.join(ROOT, "public", "assets", "mouse-format", `mouse-${state}.png`);
-    assert.ok(fs.existsSync(asset), `缺少鼠鼠状态图 ${asset}`);
-    assert.ok(fs.statSync(asset).size > 100);
+    assert.match(html, new RegExp(`<symbol id="glyph-${state}"`), `缺少状态图标 glyph-${state}`);
+    assert.ok(appJs.includes(`"${state}"`), `状态机缺少 ${state}`);
   }
-  assert.match(appJs, /setMouseState\("success"\)/);
-  assert.match(appJs, /setMouseState\("error"\)/);
+  assert.match(html, /<symbol id="glyph-convert"/);
+  assert.match(appJs, /setStageState\("success"\)/);
+  assert.match(appJs, /setStageState\("error"\)/);
   assert.match(appJs, /\? "batch" :/, "批量状态按队列数量切换");
+  assert.match(css, /\.stage-art\[data-state='success'\]/);
+  assert.match(css, /\.stage-art\[data-state='error'\]/);
 });
 
 test("中英文文案键集合必须一致，且保留非商用声明", () => {
@@ -103,9 +106,9 @@ test("语言与偏好复用桌面版模块与存储键", () => {
   assert.match(i18nSource, /flyingmouse\.language\.v1/);
 });
 
-test("样式保留鼠鼠主色、双主题与降级动画", () => {
+test("样式保留品牌主色、双主题与降级动画", () => {
   assert.match(css, /--accent: #e95f6d/);
-  assert.match(css, /\.mouse-mascot/);
+  assert.match(css, /\.stage-glyph/);
   assert.match(css, /\.dropzone/);
   assert.match(css, /\[data-theme='dark'\]/);
   assert.match(css, /prefers-color-scheme: dark/);

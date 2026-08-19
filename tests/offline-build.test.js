@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { build, OUTPUT_PATH, MOUSE_STATES } = require("../scripts/build-offline.js");
+const { build, OUTPUT_PATH, STAGE_STATES } = require("../scripts/build-offline.js");
 const { decodePng, encodePng, shrinkPng } = require("../scripts/png-mini.js");
 
 const ROOT = path.join(__dirname, "..");
@@ -28,17 +28,15 @@ test("单文件产物不含任何外部引用", () => {
   assert.match(html, /<style>/);
 });
 
-test("鼠鼠状态图全部内联为 data URI，体积保持在 1MB 以内", () => {
+test("产物只用内嵌 SVG 图标，不含位图，体积保持在 300KB 以内", () => {
   const html = build();
-  const dataUris = html.match(/data:image\/png;base64,/g) || [];
-  assert.ok(dataUris.length >= MOUSE_STATES.length, `内联鼠鼠图片数量不足：${dataUris.length}`);
-  assert.match(html, /id="mouseMascot"/);
-  assert.match(html, /FMOffline\.mouseAssets/);
-  for (const state of MOUSE_STATES) {
-    assert.ok(html.includes(`"${state}": "data:image/png;base64,`), `缺少鼠鼠状态 ${state}`);
+  assert.doesNotMatch(html, /data:image\/(png|jpe?g|gif|webp);base64,/i, "产物不应内联任何位图");
+  assert.match(html, /id="stageArt"/);
+  for (const state of STAGE_STATES) {
+    assert.ok(html.includes(`<symbol id="glyph-${state}"`), `缺少状态图标 glyph-${state}`);
   }
   const bytes = Buffer.byteLength(html, "utf8");
-  assert.ok(bytes < 1024 * 1024, `离线单文件过大：${bytes} 字节`);
+  assert.ok(bytes < 300 * 1024, `离线单文件过大：${bytes} 字节`);
 });
 
 test("产物用严格 CSP：不含 'self'，源码页则允许 'self' 以便直接打开调试", () => {
@@ -57,7 +55,6 @@ test("产物用严格 CSP：不含 'self'，源码页则允许 'self' 以便直�
 
 test("产物保留品牌与非商用声明", () => {
   const html = build();
-  assert.match(html, /鼠鼠/);
   assert.match(html, /禁止商业售卖/);
   assert.match(html, /FlyingMouse Format/);
 });

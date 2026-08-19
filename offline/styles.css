@@ -214,10 +214,21 @@ li:focus-visible {
   overflow: hidden;
 }
 
-.brand-mouse {
-  width: 74px;
-  height: auto;
-  transform: translateY(4px);
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  fill: none;
+  stroke: var(--accent-strong);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 
 .brand-text {
@@ -402,23 +413,71 @@ li:focus-visible {
   background: linear-gradient(150deg, var(--accent-soft), var(--yellow-soft));
 }
 
-.mouse-stage {
+.stage-art {
   display: grid;
   place-items: center;
-  width: min(240px, 40vw);
+  width: 132px;
+  height: 132px;
   flex: none;
+  border: 2px solid var(--line);
+  border-radius: 28px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-hard);
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
-.mouse-mascot {
-  width: 100%;
-  height: auto;
-  filter: drop-shadow(5px 5px 0 rgba(20, 20, 20, 0.18));
-  transition: transform 0.2s ease;
+.stage-glyph {
+  width: 60px;
+  height: 60px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.2s ease;
 }
 
-.dropzone:hover .mouse-mascot,
-.dropzone.dragging .mouse-mascot {
-  transform: translateY(-4px) scale(1.02);
+.stage-art[data-state='converting'] .stage-glyph,
+.stage-art[data-state='batch'] .stage-glyph {
+  animation: glyph-spin 2.4s linear infinite;
+}
+
+.stage-art[data-state='batch'] .stage-glyph {
+  animation: none;
+}
+
+.stage-art[data-state='success'] {
+  border-color: var(--success);
+  background: var(--green-soft);
+}
+
+.stage-art[data-state='success'] .stage-glyph {
+  stroke: var(--success);
+}
+
+.stage-art[data-state='error'] {
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--surface-raised));
+}
+
+.stage-art[data-state='error'] .stage-glyph {
+  stroke: var(--error);
+}
+
+.dropzone:hover .stage-art,
+.dropzone.dragging .stage-art {
+  transform: translateY(-3px);
+  background: var(--accent-soft);
+}
+
+@keyframes glyph-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .dropzone-text {
@@ -877,8 +936,14 @@ li:focus-visible {
     padding: 18px;
   }
 
-  .mouse-stage {
-    width: min(260px, 62vw);
+  .stage-art {
+    width: 108px;
+    height: 108px;
+  }
+
+  .stage-glyph {
+    width: 50px;
+    height: 50px;
   }
 
   .promise-list {
@@ -906,8 +971,9 @@ li:focus-visible {
     height: 62px;
   }
 
-  .brand-mouse {
-    width: 60px;
+  .brand-mark {
+    width: 32px;
+    height: 32px;
   }
 
   .queue-item {

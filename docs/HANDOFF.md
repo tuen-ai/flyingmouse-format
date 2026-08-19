@@ -20,9 +20,9 @@
 
 ## 离线单文件网页版（2026-08-18 新增，分支 claude/offline-html-tool-ui-redesign-vloqqv）
 
-- 交付物：`offline/dist/flyingmouse-format-offline.html`（约 450KB，单文件，已入库；`.gitignore` 对 `dist/` 做了例外）。
+- 交付物：`offline/dist/flyingmouse-format-offline.html`（约 171KB，单文件，已入库；`.gitignore` 对 `dist/` 做了例外）。
   免安装、免联网、无服务端；能力＝图片互转 / 图片合并 PDF / 文本表格互转 / EPUB / DOCX / 打包 ZIP。
-- UI 重做但保留鼠鼠品牌（`#mouseMascot` + 状态图 + 珊瑚红 #e95f6d + 墨线硬阴影），新增深浅双主题。
+- UI 重做：用户 2026-08-19 要求去掉鼠鼠形象，界面图标改为自绘 SVG 精灵（`#glyph-*`），保留珊瑚红 #e95f6d + 墨线硬阴影与深浅双主题；桌面版鼠鼠品牌不变。
 - 构建：`npm run build:offline`（改 `offline/` 后必须重跑并提交产物）；`node scripts/build-offline.js --check` 校验一致性。
 - 测试：`tests/offline-core.test.js` / `offline-build.test.js` / `offline-ui-static.test.js` 共 47 项，已加入 `npm test` 与 `npm run test:ci`，全部零依赖（不需要 bin/ 引擎、不需要网络）。
 - 已验证：真实 Chromium 以 file:// 打开跑通全部转换路径、错误路径、队列排序、格式记忆、语言/主题持久化，控制台零报错、零外部请求；

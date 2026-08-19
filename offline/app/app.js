@@ -1,6 +1,6 @@
 // 离线版控制器：队列、目标格式交集、转换编排、结果下载、主题与语言。
 // 约束（与桌面版一致的产品红线）：所有用户文本用 DOM API / textContent 生成，禁止 innerHTML；
-// 鼠鼠状态必须覆盖上传 / 识别 / 转换 / 批量 / 成功 / 失败；长文件名与错误必须可换行。
+// 状态图标必须覆盖上传 / 识别 / 转换 / 批量 / 成功 / 失败；长文件名与错误必须可换行。
 (function (global) {
   const offline = global.FMOffline || {};
   const formatMap = offline.formatMap;
@@ -17,16 +17,8 @@
   const MAX_FILE_BYTES = 256 * 1024 * 1024;
   const MAX_IMAGE_PIXELS = 50 * 1000 * 1000;
 
-  const DEFAULT_MOUSE_ASSETS = {
-    idle: "../public/assets/mouse-format/mouse-idle.png",
-    upload: "../public/assets/mouse-format/mouse-upload.png",
-    analyzing: "../public/assets/mouse-format/mouse-analyzing.png",
-    converting: "../public/assets/mouse-format/mouse-converting.png",
-    batch: "../public/assets/mouse-format/mouse-batch.png",
-    success: "../public/assets/mouse-format/mouse-success.png",
-    error: "../public/assets/mouse-format/mouse-error.png",
-  };
-  const mouseAssets = offline.mouseAssets || DEFAULT_MOUSE_ASSETS;
+  // 状态图标：页面里的 SVG 精灵（自绘几何图形），不引用任何位图
+  const STAGE_STATES = ["idle", "upload", "analyzing", "converting", "batch", "success", "error"];
 
   const state = {
     items: [],
@@ -98,10 +90,10 @@
     }
   }
 
-  function setMouseState(name) {
-    const source = mouseAssets[name] || mouseAssets.idle;
-    elements.mouseMascot.src = source;
-    elements.mouseMascot.dataset.state = name;
+  function setStageState(name) {
+    const state = STAGE_STATES.includes(name) ? name : "idle";
+    elements.stageGlyph.setAttribute("href", `#glyph-${state}`);
+    elements.stageArt.dataset.state = state;
   }
 
   function setStatus(message, type) {
@@ -323,7 +315,7 @@
     if (rejected > 0) {
       showToast(t("error.tooLarge", { size: formatBytes(MAX_FILE_BYTES), limit: formatBytes(MAX_FILE_BYTES) }), "error");
     }
-    setMouseState(state.items.length > 1 ? "batch" : "analyzing");
+    setStageState(state.items.length > 1 ? "batch" : "analyzing");
     renderQueue();
     renderTargets();
     renderResults();
@@ -332,7 +324,7 @@
     if (mascotTimer) clearTimeout(mascotTimer);
     mascotTimer = window.setTimeout(() => {
       mascotTimer = 0;
-      if (!state.converting) setMouseState(state.items.length > 1 ? "batch" : "idle");
+      if (!state.converting) setStageState(state.items.length > 1 ? "batch" : "idle");
     }, 500);
   }
 
@@ -350,7 +342,7 @@
     renderQueue();
     renderTargets();
     renderResults();
-    setMouseState("upload");
+    setStageState("upload");
     setStatus(t("status.idle"));
     showToast(t("toast.cleared"));
   }
@@ -488,7 +480,7 @@
     elements.convertButton.textContent = t("action.converting");
     elements.clearButton.disabled = true;
     elements.addMoreButton.disabled = true;
-    setMouseState(state.items.length > 1 ? "batch" : "converting");
+    setStageState(state.items.length > 1 ? "batch" : "converting");
 
     const target = state.target;
     const mergePdf = target === "pdf" && elements.pdfMerge.checked && state.items.filter((item) => item.category === "image").length > 1;
@@ -559,13 +551,13 @@
     const failed = state.items.filter((item) => item.status === "error").length;
     const success = state.items.length - failed;
     if (failed === 0) {
-      setMouseState("success");
+      setStageState("success");
       setStatus(t("status.done", { count: success }), "success");
     } else if (success === 0) {
-      setMouseState("error");
+      setStageState("error");
       setStatus(t("status.failedAll"), "error");
     } else {
-      setMouseState("error");
+      setStageState("error");
       setStatus(t("status.partial", { success, failed }), "error");
     }
 
@@ -680,7 +672,7 @@
     renderTargets();
     renderResults();
     if (state.items.length === 0) {
-      setMouseState("upload");
+      setStageState("upload");
       setStatus(t("status.idle"));
     }
   }
@@ -700,7 +692,7 @@
       elements.dropZone.addEventListener(type, (event) => {
         event.preventDefault();
         elements.dropZone.classList.add("dragging");
-        setMouseState("upload");
+        setStageState("upload");
       });
     });
     ["dragleave", "dragend"].forEach((type) => {
@@ -766,7 +758,7 @@
 
   function collectElements() {
     const ids = [
-      "brandMouse", "mouseMascot", "dropZone", "fileInput", "workbench", "queueList", "queueCounter", "queueEmpty",
+      "stageArt", "stageGlyph", "dropZone", "fileInput", "workbench", "queueList", "queueCounter", "queueEmpty",
       "addMoreButton", "clearButton", "targetGroup", "targetNote", "imageOptions", "pdfOptions", "textOptions",
       "imageQuality", "imageQualityValue", "imageMaxSize", "alphaBackground", "alphaBackgroundField", "pdfPaper",
       "pdfMargin", "pdfMerge", "csvDelimiter", "csvBom", "ebookTitle", "ebookTitleField", "convertButton",
@@ -786,8 +778,7 @@
     });
     if (preferencesModule) state.preferences = preferencesModule.readPreferences(storage);
     applyTheme(readStoredTheme());
-    if (mouseAssets.idle) elements.brandMouse.src = mouseAssets.idle;
-    setMouseState("upload");
+    setStageState("upload");
     bindEvents();
     refreshLanguage();
     renderResults();

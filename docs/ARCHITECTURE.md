@@ -97,8 +97,8 @@ Windows 7 构建是兼容 profile，不改变标准版运行时。PE 元数据�
 
 ```text
 offline/index.html + styles.css + core/*.js + app/*.js
-        ↓  node scripts/build-offline.js（内联样式/脚本，鼠鼠图经 scripts/png-mini.js 缩放后转 data URI）
-offline/dist/flyingmouse-format-offline.html（单文件，约 450KB，可提交、可分发）
+        ↓  node scripts/build-offline.js（内联样式与脚本；图标是页面内自绘的 SVG 精灵，不内联任何位图）
+offline/dist/flyingmouse-format-offline.html（单文件，约 171KB，可提交、可分发）
         ↓  浏览器打开（file://）
 File/Blob → Canvas 或纯 JS 转换器 → Blob → 下载 / 另存为（showSaveFilePicker 可用时）
 ```

@@ -5,16 +5,12 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { shrinkPng } = require("./png-mini.js");
-
 const ROOT = path.join(__dirname, "..");
 const OFFLINE_DIR = path.join(ROOT, "offline");
 const OUTPUT_PATH = path.join(OFFLINE_DIR, "dist", "flyingmouse-format-offline.html");
 
-// 鼠鼠状态图：桌面版 9 态里离线版用得到的 7 态（离线版没有 OCR / PDF 分页）
-const MOUSE_STATES = ["idle", "upload", "analyzing", "converting", "batch", "success", "error"];
-const MASCOT_MAX_SIZE = 320;
-const MASCOT_QUANTIZE_BITS = 3;
+// 界面状态：图标由页面内的 SVG 精灵提供（自绘几何图形），构建时不再内联任何位图
+const STAGE_STATES = ["idle", "upload", "analyzing", "converting", "batch", "success", "error"];
 
 function readText(relativePath) {
   return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -24,16 +20,6 @@ function resolveFromOffline(source) {
   const cleaned = source.replace(/^\.\//, "");
   if (cleaned.startsWith("../")) return path.posix.normalize(path.posix.join("offline", cleaned));
   return path.posix.join("offline", cleaned);
-}
-
-function mascotDataUrls() {
-  const assets = {};
-  for (const stateName of MOUSE_STATES) {
-    const file = path.join(ROOT, "public", "assets", "mouse-format", `mouse-${stateName}.png`);
-    const shrunk = shrinkPng(fs.readFileSync(file), { maxSize: MASCOT_MAX_SIZE, quantizeBits: MASCOT_QUANTIZE_BITS });
-    assets[stateName] = `data:image/png;base64,${shrunk.toString("base64")}`;
-  }
-  return assets;
 }
 
 // 内联脚本里出现 </script> 会提前结束标签，统一转义。
@@ -53,7 +39,6 @@ const STRICT_CSP = "default-src 'none'; img-src data: blob:; media-src blob:; st
 
 function build() {
   const version = JSON.parse(readText("package.json")).version;
-  const assets = mascotDataUrls();
   let html = readText("offline/index.html");
 
   const cssMatch = /\n?\s*<link rel="stylesheet" href="([^"]+)">/.exec(html);
@@ -77,7 +62,6 @@ function build() {
 
   const runtimeScript = "(function (global) {\n"
     + "  global.FMOffline = global.FMOffline || {};\n"
-    + `  global.FMOffline.mouseAssets = ${JSON.stringify(assets, null, 2)};\n`
     + `  global.FMOffline.buildInfo = { version: ${JSON.stringify(version)} };\n`
     + "})(typeof globalThis !== \"undefined\" ? globalThis : this);";
 
@@ -88,15 +72,11 @@ function build() {
     html = html.replace(script.tag, () => prefix + inlined);
   });
 
-  // 页面里剩下的鼠鼠图片路径换成内联 data URI
-  html = html
-    .split('src="../public/assets/mouse-format/mouse-idle.png"')
-    .join(`src="${assets.idle}"`)
-    .split('src="../public/assets/mouse-format/mouse-upload.png"')
-    .join(`src="${assets.upload}"`);
-
-  // fail closed：任何还能发起请求的写法都不许留在产物里
+  // fail closed：任何还能发起请求的写法都不许留在产物里。
+  // 只扫描标记部分（去掉内联脚本体），否则 JS 源码里出现的 "<img" / "@import" 字符串会误报。
+  const markup = html.replace(/<script>[\s\S]*?<\/script>/g, "<script></script>");
   const externalPatterns = [
+    /<img\s/i,
     /<script\s+src=/i,
     /<link\s[^>]*href=/i,
     /(?:src|href)="(?:https?:)?\/\//i,
@@ -105,7 +85,7 @@ function build() {
     /url\(\s*['"]?(?:https?:)?\/\//i,
   ];
   for (const pattern of externalPatterns) {
-    if (pattern.test(html)) throw new Error(`构建产物仍然可能发起外部请求：${pattern}`);
+    if (pattern.test(markup)) throw new Error(`构建产物仍然可能发起外部请求：${pattern}`);
   }
   if (!html.includes(STRICT_CSP)) throw new Error("构建产物缺少严格 CSP");
   return html;
@@ -139,4 +119,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { build, MOUSE_STATES, OUTPUT_PATH };
+module.exports = { build, STAGE_STATES, OUTPUT_PATH };
